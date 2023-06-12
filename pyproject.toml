@@ -38,6 +38,8 @@ authors = ["Your Name <you@example.com>"]
 python = "^3.9"
 wheel = "^0.40.0"
 Cython = "^0.29.35"
+easygui = "^0.98.3"
+selenium = "^4.10.0"
 
 [tool.poetry.dev-dependencies]
 ipython = "^8.14.0"
