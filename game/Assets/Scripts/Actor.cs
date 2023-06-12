@@ -11,6 +11,8 @@ public class Actor
     private GameObject _upperRight;
     private GameObject _right;
 
+    public Prop GetProp() { return _prop; }
+
     public static Actor FromStateSync(Network.StateSync.Actor netActor)
     {
         UnityAssetSource assetLoader = new UnityAssetSource();
@@ -32,6 +34,11 @@ public class Actor
     {
         _prop = new Prop(prefab, assetId);
         _debuggingEnabled = false;
+    }
+
+    public IAssetSource.AssetId AssetId()
+    {
+        return _prop.AssetId();
     }
 
     public void SetWalkSpeed(float speed) { _prop.SetWalkSpeed(speed); }
@@ -106,6 +113,8 @@ public class Actor
     {
         _prop.AddAction(action);
     }
+
+    public GameObject GetGameObject() { return _prop.GetGameObject(); }
 
     private float Scale()
     {

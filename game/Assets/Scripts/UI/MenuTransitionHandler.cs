@@ -45,6 +45,7 @@ public class MenuTransitionHandler : MonoBehaviour
     private static readonly string TURN_START_SOUND = "TURN_START_SOUND";
 
     private static readonly string MUTE_AUDIO_TOGGLE = "MUTE_AUDIO_TOGGLE";
+    private static readonly string SCREEN_TINT_TAG = "SCREEN_TINT";
 
     // Used for replay scene.
     private static readonly string FOLLOWER_TURN_TAG = "FOLLOWER_TURN_INDICATOR";
@@ -87,6 +88,8 @@ public class MenuTransitionHandler : MonoBehaviour
     private DateTime _lastNegativeFeedback = DateTime.MinValue;
     private GameObject _negativeFeedbackSignal;
 
+    private MenuOptions _dynamicMenu;
+
     private static readonly float FEEDBACK_DURATION_SECONDS = 1.0f;
 
     public static MenuTransitionHandler TaggedInstance()
@@ -111,37 +114,53 @@ public class MenuTransitionHandler : MonoBehaviour
     public void SaveGameData()
     {
         // Downloads the game's map update to a json file.
+        BugReport bugReport = CollectBugReport();
+        if (bugReport == null)
+        {
+            return;
+        }
+        string bugReportJson = JsonConvert.SerializeObject(bugReport, Formatting.Indented);
+        DownloadJson("client_bug_report.json.log", bugReportJson);
+    }
+
+    public BugReport CollectBugReport(int max_log_size_kb = -1) {
         Network.NetworkManager networkManager = Network.NetworkManager.TaggedInstance();
         IMapSource mapSource = networkManager.MapSource();
         if (mapSource == null)
         {
             Debug.Log("No map source.");
-            return;
+            return null;
         }
         Network.MapUpdate mapUpdate = mapSource.RawMapUpdate();
 
         List<TurnState> turnStateLog = new List<TurnState>();
-        turnStateLog.Add(_lastTurn);
+        if (_lastTurn != null) {
+            turnStateLog.Add(_lastTurn);
+        }
 
         Network.BugReport localBugReport = new Network.BugReport();
-        localBugReport.MapUpdate = mapUpdate;
-        localBugReport.TurnStateLog = turnStateLog;
+        localBugReport.map_update = mapUpdate;
+        localBugReport.turn_state_log = turnStateLog;
 
-        localBugReport.Logs = new List<ModuleLog>();
+        localBugReport.logs = new List<ModuleLog>();
         List<string> modules = Logger.GetTrackedModules();
-        Debug.Log("Modules: " + modules.Count);
         foreach (string module in modules)
         {
             Logger logger = Logger.GetTrackedLogger(module);
             ModuleLog moduleLog = new ModuleLog();
-            moduleLog.Module = module;
-            moduleLog.Log = System.Text.Encoding.UTF8.GetString(logger.GetBuffer());
-            localBugReport.Logs.Add(moduleLog);
-            Debug.Log("Module: " + module + " and log size: " + moduleLog.Log.Length);
+            moduleLog.module = module;
+            string log = System.Text.Encoding.UTF8.GetString(logger.GetBuffer()).TrimEnd('\0');
+            if ((max_log_size_kb > 0) && (log.Length > max_log_size_kb * 1024))
+            {
+                // Chop off the front of the string to make it fit. This is a
+                // cyclical buffer, so the final bytes are newer and more
+                // useful.
+                log = log.Substring(log.Length - max_log_size_kb * 1024);
+            }
+            moduleLog.log = log;
+            localBugReport.logs.Add(moduleLog);
         }
-
-        string bugReportJson = JsonConvert.SerializeObject(localBugReport, Formatting.Indented);
-        DownloadJson("client_bug_report.json.log", bugReportJson);
+        return localBugReport;
     }
 
     public delegate void UploadCallback(string contents);
@@ -176,6 +195,67 @@ public class MenuTransitionHandler : MonoBehaviour
     {
         Network.NetworkManager.TaggedInstance().ReturnToMenu();
     }
+
+    // Maps Network.SoundClipType to TAG name of audio source in Unity.
+    private static readonly string[] audioSourceTags = new string[] {
+        "",
+        "INSTRUCTION_RECEIVED_SOUND",
+        "INSTRUCTION_SENT_SOUND",
+        "INVALID_SET_SOUND",
+        "NEGATIVE_FEEDBACK_SOUND",
+        "POSITIVE_FEEDBACK_SOUND",
+        "VALID_SET_SOUND",
+        "CARD_SELECT",
+        "CARD_DESELECT",
+        "EASTER_EGG_SOUND_1",
+        "EASTER_EGG_SOUND_2",
+        "EASTER_EGG_SOUND_3",
+        "EASTER_EGG_SOUND_4"
+    };
+
+    public static void PlaySound(Network.SoundTrigger trigger)
+    {
+        if (trigger.sound_clip == Network.SoundClipType.NONE)
+            return;
+        Logger logger = Logger.GetOrCreateTrackedLogger(TAG);
+        // Make sure trigger.sound_clip is valid.
+        if ((int)trigger.sound_clip >= audioSourceTags.Length)
+        {
+            logger.Warn("Sound clip unknown: " + trigger.sound_clip);
+            return;
+        }
+        string tagName = audioSourceTags[(int)trigger.sound_clip];
+        GameObject soundObject = GameObject.FindGameObjectWithTag(tagName);
+        if (soundObject == null)
+        {
+            logger.Warn("Could not find sound object for trigger: " + trigger.ToString());
+            return;
+        }
+        AudioSource audioSource = soundObject.GetComponent<AudioSource>();
+        if (audioSource == null)
+        {
+            logger.Warn("Could not find audio source for trigger: " + trigger.ToString());
+            return;
+        }
+        GameObject muteToggleObject = GameObject.FindGameObjectWithTag(MUTE_AUDIO_TOGGLE);
+        if (muteToggleObject != null)
+        {
+            Toggle muteToggle = muteToggleObject.GetComponent<Toggle>();
+            if (muteToggle != null)
+            {
+                Debug.Log("Mute toggle is " + muteToggle.isOn);
+                if (muteToggle.isOn)
+                {
+                    logger.Info("Muted sound: " + trigger.ToString());
+                    audioSource.Stop();
+                    return;
+                }
+            }
+        }
+        audioSource.volume = trigger.volume;
+        audioSource.Play();
+    }
+
 
     public List<Network.ObjectiveMessage> ObjectiveList()
     {
@@ -222,6 +302,20 @@ public class MenuTransitionHandler : MonoBehaviour
             objectiveUi.transform.localPosition = Vector3.zero;
             objectiveUi.transform.localRotation = Quaternion.identity;
             objectiveUi.transform.Find("Label").gameObject.GetComponent<TMPro.TMP_Text>().text = objectives[i].text;
+            // If playing as the leader, show all feedback messages.
+            // If playing as the follower, only show feedback messages for completed objectives.
+            // Check if this is enabled in the config.
+            bool delayed_feedback_enabled = networkManager.ServerLobbyInfo().delayed_feedback_enabled;
+            if (((networkManager.Role() == Network.Role.LEADER) || objectives[i].completed) && delayed_feedback_enabled && (!String.IsNullOrEmpty(objectives[i].feedback_text)))
+            {
+                GameObject feedbackUi = Instantiate(source.LoadUi(IAssetSource.UiId.OBJECTIVE_FEEDBACK)) as GameObject;
+                feedbackUi.transform.SetParent(objectivesPanel.transform);
+                feedbackUi.transform.localScale = Vector3.one;
+                feedbackUi.transform.localPosition = Vector3.zero;
+                feedbackUi.transform.localRotation = Quaternion.identity;
+                GameObject feedbackLabel = feedbackUi.transform.Find("Label").gameObject;
+                feedbackLabel.GetComponent<TMPro.TMP_Text>().text = objectives[i].feedback_text;
+            }
             if (activeIndex == i)
             {
                 objectiveUi.GetComponent<UIObjectiveInfo>().Objective = objectives[i];
@@ -298,9 +392,25 @@ public class MenuTransitionHandler : MonoBehaviour
 
     public void SendPositiveFeedback()
     {
-        if (!Network.NetworkManager.TaggedInstance().ServerConfig().live_feedback_enabled)
+        Network.NetworkManager network = Network.NetworkManager.TaggedInstance();
+        if (network == null) {
+            _logger.Info("SendPositiveFeedback(): NetworkManager not found");
+            return;
+        }
+        bool feedback_enabled = (network.ServerConfig().live_feedback_enabled || network.ServerLobbyInfo().live_feedback_enabled || network.ServerLobbyInfo().delayed_feedback_enabled);
+        if (!feedback_enabled)
         {
-            _logger.Info("SendPositiveFeedback(): Live feedback is not enabled.");
+            _logger.Info("SendPositiveFeedback(): Live feedback not enabled");
+            return;
+        }
+        if (Network.NetworkManager.TaggedInstance().CurrentTurn() != Network.Role.FOLLOWER)
+        {
+            _logger.Info("SendPositiveFeedback(): Not follower's turn");
+            return;
+        }
+        if (Network.NetworkManager.TaggedInstance().Role() != Network.Role.LEADER)
+        {
+            _logger.Info("SendPositiveFeedback(): Not leader");
             return;
         }
         Network.LiveFeedback feedback = new Network.LiveFeedback();
@@ -310,9 +420,25 @@ public class MenuTransitionHandler : MonoBehaviour
 
     public void SendNegativeFeedback()
     {
-        if (!Network.NetworkManager.TaggedInstance().ServerConfig().live_feedback_enabled)
+        Network.NetworkManager network = Network.NetworkManager.TaggedInstance();
+        if (network == null) {
+            _logger.Info("SendNegativeFeedback(): NetworkManager not found");
+            return;
+        }
+        bool feedback_enabled = (network.ServerConfig().live_feedback_enabled || network.ServerLobbyInfo().live_feedback_enabled || network.ServerLobbyInfo().delayed_feedback_enabled);
+        if (!feedback_enabled)
         {
-            _logger.Info("SendNegativeFeedback(): Live feedback is not enabled.");
+            _logger.Info("SendNegativeFeedback(): Live feedback not enabled");
+            return;
+        }
+        if (Network.NetworkManager.TaggedInstance().CurrentTurn() != Network.Role.FOLLOWER)
+        {
+            _logger.Info("SendNegativeFeedback(): Not follower's turn");
+            return;
+        }
+        if (Network.NetworkManager.TaggedInstance().Role() != Network.Role.LEADER)
+        {
+            _logger.Info("SendNegativeFeedback(): Not leader");
             return;
         }
         Network.LiveFeedback feedback = new Network.LiveFeedback();
@@ -638,10 +764,35 @@ public class MenuTransitionHandler : MonoBehaviour
 
     public void OnSceneLoaded(Scene scene, LoadSceneMode mode)
     {
+        if (scene.name == "menu_scene") {
+            // Reset the global color tint.
+            // Get the SCREEN_TINT_TAG GUI panel and change the Image background color to UnityEngine.Color.transparent.
+            GlobalScreenTint(UnityEngine.Color.clear);
+            if (_dynamicMenu != null) {
+                DisplayMenu();
+            }
+        }
         if (scene.name != "menu_scene") {
             _positiveFeedbackSignal = GameObject.FindWithTag(POSITIVE_FEEDBACK_TAG);
             _negativeFeedbackSignal = GameObject.FindWithTag(NEGATIVE_FEEDBACK_TAG);
         }
+    }
+
+    public static void GlobalScreenTint(UnityEngine.Color color)
+    {
+        Logger logger = Logger.GetOrCreateTrackedLogger("MenuTransitionHandler");
+        GameObject panel = GameObject.FindWithTag(SCREEN_TINT_TAG);
+        if (panel == null) {
+            logger.Warn("Unable to find screen tint panel.");
+            return;
+        }
+        Image image = panel.GetComponent<Image>();
+        if (image == null) {
+            logger.Warn("Unable to find screen tint image.");
+            return;
+        }
+        logger.Info("Setting screen tint to " + color);
+        image.color = color;
     }
 
     public void TurnComplete()
@@ -649,24 +800,28 @@ public class MenuTransitionHandler : MonoBehaviour
         Network.NetworkManager.TaggedInstance().TransmitTurnComplete();
     }
 
-    public void DisplayMenu(MenuOptions m)
+    public void SetMenu(MenuOptions m) {
+        _dynamicMenu = m;
+        DisplayMenu();
+    }
+
+    public void DisplayMenu()
     {
-        _logger.Info("Displaying menu.");
-        Scene scene = SceneManager.GetActiveScene();
-        if (scene.name != "menu_scene") {
-            _logger.Warn("Attempted to set menu in non-menu scene.");
+        if (_dynamicMenu == null)
+        {
+            _logger.Warn("Attempted to display menu without a dynamic menu from server.");
             return;
         }
-
+        _logger.Info("Displaying menu.");
         _logger.Info("Bulletin");
         // Set the information bulletin.
         Text bulletin = FindTextWithTag(INFO_BULLETIN);
-        if (bulletin == null)
+        if (bulletin != null)
         {
+            bulletin.text = _dynamicMenu.bulletin_message;
+        } else {
             _logger.Warn("Unable to find info bulletin.");
-            return;
         }
-        bulletin.text = m.bulletin_message;
 
         // Remove dynamic menu children.
         _logger.Info("Clearing dynamic menu.");
@@ -689,13 +844,13 @@ public class MenuTransitionHandler : MonoBehaviour
             _logger.Warn("Unable to load menu button prefab.");
             return;
         }
-        foreach (Network.ButtonDescriptor button in m.buttons)
+        foreach (Network.ButtonDescriptor button in _dynamicMenu.buttons)
         {
             GameObject ui_button = Instantiate(prefab);
             if (ui_button == null)
             {
                 _logger.Warn("Unable to instantiate menu button.");
-                return;
+                continue;
             }
             ui_button.transform.SetParent(dynamic_menu.transform, false);
             ui_button.GetComponent<Text>().text = button.text;
@@ -912,6 +1067,11 @@ public class MenuTransitionHandler : MonoBehaviour
         GameObject feedback_obj = GameObject.FindWithTag(FEEDBACK_WINDOW_TAG);
         if (feedback_obj != null)
             feedback_obj.GetComponent<Image>().color = feedbackColor;
+    }
+
+    public void DisplayQuestion(Network.FeedbackQuestion question)
+    {
+        // TBD
     }
 
     private bool UserTypingInput()

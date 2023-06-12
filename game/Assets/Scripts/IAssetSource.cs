@@ -50,6 +50,11 @@ public interface IAssetSource
         CARD_BASE_3,
         MOUNTAIN_TREE,
         SNOWY_MOUNTAIN_TREE,
+        GROUND_TILE_STREETLIGHT_FOILAGE,
+        STREETLIGHT_BIG,
+        STREETLIGHT_BUSHES,
+        STREETLIGHT_ROCKS,
+        STREETLIGHT_WIDE,
         // These are 2D shapes that appear on card faces.
         SQUARE,
         STAR,
@@ -63,6 +68,9 @@ public interface IAssetSource
         TUTORIAL_INDICATOR,
         NONE = 101,
         MAX,
+        // Aliases go here.
+        STREETLIGHT = GROUND_TILE_STREETLIGHT,
+        STREETLIGHT_FOILAGE = GROUND_TILE_STREETLIGHT_FOILAGE,
     }
 
     public enum MaterialId
@@ -87,6 +95,7 @@ public interface IAssetSource
         OBJECTIVE_PENDING,
         OBJECTIVE_CANCELLED,
         MENU_BUTTON,
+        OBJECTIVE_FEEDBACK,
     }
 
     // Returns a prefab of the requested asset.

@@ -6,11 +6,14 @@ import dataclasses
 import logging
 import random
 import sys
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import Enum
+from typing import Iterator, List, Union
 
 import numpy as np
 import pygame
+from mashumaro.mixins.json import DataClassJSONMixin
 
 import server.actor as actor
 import server.messages.state_sync as state_sync
@@ -33,19 +36,27 @@ from py_client.follower_data_masking import (
     CensorFollowerProps,
 )
 from py_client.game_socket import GameSocket
+from server.actor import Actor
 from server.config.config import Config
-from server.main import HEARTBEAT_TIMEOUT_S
+from server.lobby_consts import LobbyInfo
 from server.map_tools.visualize import GameDisplay
 from server.messages import action as action_module
 from server.messages import message_from_server
 from server.messages.action import Action, ActionType
-from server.messages.prop import PropType
+from server.messages.live_feedback import LiveFeedback
+from server.messages.map_update import MapUpdate
+from server.messages.objective import ObjectiveMessage
+from server.messages.prop import Prop, PropType
 from server.messages.rooms import Role
+from server.messages.turn_state import TurnState
+from server.util import HEARTBEAT_TIMEOUT_S
 
 logger = logging.getLogger(__name__)
 
 # If render=True in the constructor for Game, this controls the resulting window size.
 SCREEN_SIZE = 800
+
+BLOCKING_ZERO_TIME = 0.000001
 
 # I dont' think I need this anymore. This is an attempt to export the Role symbol so that users of this package can access it.
 Role = Role
@@ -73,6 +84,41 @@ async def pygame_event_handler():
         await asyncio.sleep(0.1)
 
 
+@dataclass
+class GameState(DataClassJSONMixin):
+    """Represents the state of the game at a given time. Unpacks to a tuple for compatibility with the old API."""
+
+    map_update: MapUpdate
+    props: List[Prop]
+    turn_state: TurnState
+    instructions: List[ObjectiveMessage]
+    actors: List[Actor]
+    live_feedback: List[LiveFeedback] = None
+
+    def __iter__(
+        self,
+    ) -> Iterator[
+        Union[
+            MapUpdate,
+            List[Prop],
+            TurnState,
+            List[ObjectiveMessage],
+            List[Actor],
+            List[LiveFeedback],
+        ]
+    ]:
+        return iter(
+            (
+                self.map_update,
+                self.props,
+                self.turn_state,
+                self.instructions,
+                self.actors,
+                self.live_feedback,
+            )
+        )
+
+
 class Action(object):
     """Defines the actions that agents can take in-game.
 
@@ -94,6 +140,10 @@ class Action(object):
         TUTORIAL_NEXT_STEP = 11
         LOAD_SCENARIO = 12
         MAX = 12
+
+        @staticmethod
+        def from_str(s: str):
+            return Action.ActionCode[s]
 
     # Helper initialization functions.
     @staticmethod
@@ -380,10 +430,18 @@ class GameEndpoint(object):
 
     """
 
-    def __init__(self, game_socket: GameSocket, config: Config, render=False):
+    def __init__(
+        self,
+        game_socket: GameSocket,
+        config: Config,
+        render=False,
+        lobby_info: LobbyInfo = None,
+    ):
         self.socket = game_socket
         self.config = config
         self.render = render
+        self.lobby_info = lobby_info
+        self._timeout_observed = False
         self._reset()
 
     def _reset(self):
@@ -402,8 +460,9 @@ class GameEndpoint(object):
         self._initial_state_ready = False
         self._initial_state_retrieved = False
         self._follower_moved = False
-        self.live_feedback = None
+        self.live_feedback = []
         self.pygame_task = None
+        self._timeout_observed = False
         self._tutorial_messages = []
         # Always create the display, even if render == None.
         # This lets the user access the the display object manually if they need.
@@ -444,7 +503,11 @@ class GameEndpoint(object):
     def initialized(self):
         return self._initial_state_retrieved or self._initial_state_ready
 
-    def step(self, action, wait_for_turn=True):
+    def timeout_occurred(self) -> bool:
+        """Returns true if the game timed out in the last step()."""
+        return self._timeout_observed
+
+    def step(self, action, wait_for_turn=True) -> GameState:
         """Executes one action and blocks until the environment is ready for another action.
 
         For local games, we provide wait_for_turn as a parameter to disable
@@ -466,12 +529,19 @@ class GameEndpoint(object):
             )
 
         # Step() pseudocode:
+        # Consume any pending actions. If the game state changes during any of these, return False rejecting the action.
         # Send action.
         # Send queued messages (like automated ping responses)
         # While it isn't our turn to move:
         #   Wait for tick
         #   Process messages
-        # Return
+        # Return state
+        #
+        # Process any pending messages...
+        self._timeout_observed = False
+        if (not action.is_noop()) and not self._process_pending_messages():
+            self._timeout_observed = True
+            return self._state()
         valid_actions = set([])
         if self._player_role == Role.FOLLOWER:
             valid_actions = Action.FollowerActions()
@@ -497,8 +567,10 @@ class GameEndpoint(object):
             )
         message, reason = action.message_to_server(self.player_actor)
         if message != None:
+            logger.debug(f"Sending action: {message.type}")
             self.socket.send_message(message)
         for message in self.queued_messages:
+            logger.debug(f"Sending action: {message.type}")
             self.socket.send_message(message)
         self.queued_messages = []
         # Reset this variable. We want to see if while waiting for ticks, the
@@ -521,13 +593,20 @@ class GameEndpoint(object):
         state = self._state()
         # Clear internal live feedback before returning. This is to make sure that the
         # live feedback only occurs for 1 step per feedback message.
-        self.live_feedback = None
+        self.live_feedback = []
 
         # Updates the game visualization. If self._render, draws the display to the screen.
         self._render()
 
         self.last_step_call = datetime.now()
         return state
+
+    def _feedback_enabled(self):
+        if not self.lobby_info:
+            return self.config.live_feedback_enabled
+        return (
+            self.config.live_feedback_enabled and self.lobby_info.live_feedback_enabled
+        )
 
     def _can_act(self):
         if self.player_role() == self.turn_state.turn:
@@ -544,7 +623,7 @@ class GameEndpoint(object):
                 return False
             return True
 
-        if (self.player_role() == Role.LEADER) and self.config.live_feedback_enabled:
+        if (self.player_role() == Role.LEADER) and self._feedback_enabled():
             # Check if the follower position has changed since the last tick.
             return self._follower_moved
 
@@ -552,6 +631,22 @@ class GameEndpoint(object):
             return True
 
         return False
+
+    def _process_pending_messages(self) -> bool:
+        """Process any pending messages from the server. Returns false if a turn change occurred. True if our turn never ended."""
+        turn_change = False
+        current_turn = self.turn_state.turn
+        message, reason = self.socket.receive_message(
+            timedelta(seconds=BLOCKING_ZERO_TIME)
+        )
+        while message:
+            self._handle_message(message)
+            if self.turn_state.turn != current_turn:
+                turn_change = True
+            message, reason = self.socket.receive_message(
+                timedelta(seconds=BLOCKING_ZERO_TIME)
+            )
+        return not turn_change
 
     def _wait_for_tick(self, timeout=timedelta(seconds=60)):
         """Waits for a tick"""
@@ -601,7 +696,7 @@ class GameEndpoint(object):
     def __exit__(self, type, value, traceback):
         self.close()
 
-    def _state(self):
+    def _state(self) -> GameState:
         leader = None
         follower = None
         for id in self.actors:
@@ -622,7 +717,7 @@ class GameEndpoint(object):
             map_update = CensorFollowerMap(map_update, follower, self.config)
             props = CensorFollowerProps(props, follower, self.config)
             actors = CensorActors(actors, follower, self.config)
-        return (
+        return GameState(
             map_update,
             props,
             self.turn_state,
@@ -816,7 +911,7 @@ class GameEndpoint(object):
         elif message.type == message_from_server.MessageType.PING:
             self.queued_messages.append(PongMessage())
         elif message.type == message_from_server.MessageType.LIVE_FEEDBACK:
-            self.live_feedback = message.live_feedback.signal
+            self.live_feedback.append(message.live_feedback.signal)
         elif message.type == message_from_server.MessageType.PROP_UPDATE:
             self._handle_prop_update(message.prop_update)
         elif message.type == message_from_server.MessageType.STATE_MACHINE_TICK:

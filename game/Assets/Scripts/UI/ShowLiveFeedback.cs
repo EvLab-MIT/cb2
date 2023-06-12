@@ -23,6 +23,7 @@ public class ShowLiveFeedback : MonoBehaviour
 
         Network.NetworkManager networkManager = Network.NetworkManager.TaggedInstance();
         if (networkManager.ServerConfig() == null) return;
+        if (networkManager.ServerLobbyInfo() == null) return;
 
         Camera camera = GetComponent<Camera>();
         // Only disable live feedback if its not configured. It should be shown
@@ -30,11 +31,12 @@ public class ShowLiveFeedback : MonoBehaviour
         // disable it, and this would nullify their effect (e.g. feedback
         // buttons aren't shown to the follower. Don't want to override that by
         // accident here and show them).
-        if (!networkManager.ServerConfig().live_feedback_enabled)
+        bool config_enabled = networkManager.ServerConfig().live_feedback_enabled || networkManager.ServerLobbyInfo().live_feedback_enabled;
+        if (!config_enabled)
         {
             gameObject.SetActive(false);
         }
-        _logger.Info("Set live feedback to: " + networkManager.ServerConfig().live_feedback_enabled);
+        _logger.Info("Set live feedback to: " + config_enabled);
         _liveFeedbackSet = true;
     }
 }

@@ -48,3 +48,15 @@ class LobbyInfo(DataClassJSONMixin):
     comment: str = ""
     # The maximum number of games that can be created in this lobby.
     game_capacity: int = 40
+    # To disable sound, just set this to 0.0
+    sound_clip_volume: float = 1.0
+    # After each instruction, prompt the follower with questions.
+    follower_feedback_questions: bool = False
+    # From the follower's POV, the cards are standing and facing the follower.
+    cards_face_follower: bool = False
+    # For lobbies which use experience to match players, this is the percentage
+    # of times when the player will be matched randomly instead of by
+    # experience.
+    ranked_matchmaking_randomness: float = 0.0
+    live_feedback_enabled: bool = True
+    delayed_feedback_enabled: bool = True

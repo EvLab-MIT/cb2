@@ -16,46 +16,14 @@ public class KeyboardShortcutHandler : MonoBehaviour
 
     public void SendPositiveFeedback()
     {
-        if (!Network.NetworkManager.TaggedInstance().ServerConfig().live_feedback_enabled)
-        {
-            _logger.Info("SendPositiveFeedback(): Live feedback not enabled");
-            return;
-        }
-        if (Network.NetworkManager.TaggedInstance().CurrentTurn() != Network.Role.FOLLOWER)
-        {
-            _logger.Info("SendPositiveFeedback(): Not follower's turn");
-            return;
-        }
-        if (Network.NetworkManager.TaggedInstance().Role() != Network.Role.LEADER)
-        {
-            _logger.Info("SendPositiveFeedback(): Not leader");
-            return;
-        }
-        Network.LiveFeedback feedback = new Network.LiveFeedback();
-        feedback.signal = Network.FeedbackType.POSITIVE;
-        Network.NetworkManager.TaggedInstance().TransmitLiveFeedback(feedback);
+        MenuTransitionHandler menu = MenuTransitionHandler.TaggedInstance();
+        menu.SendPositiveFeedback();
     }
 
     public void SendNegativeFeedback()
     {
-        if (!Network.NetworkManager.TaggedInstance().ServerConfig().live_feedback_enabled)
-        {
-            _logger.Info("SendNegativeFeedback(): Live feedback not enabled");
-            return;
-        }
-        if (Network.NetworkManager.TaggedInstance().CurrentTurn() != Network.Role.FOLLOWER)
-        {
-            _logger.Info("SendNegativeFeedback(): Not follower's turn");
-            return;
-        }
-        if (Network.NetworkManager.TaggedInstance().Role() != Network.Role.LEADER)
-        {
-            _logger.Info("SendNegativeFeedback(): Not leader");
-            return;
-        }
-        Network.LiveFeedback feedback = new Network.LiveFeedback();
-        feedback.signal = Network.FeedbackType.NEGATIVE;
-        Network.NetworkManager.TaggedInstance().TransmitLiveFeedback(feedback);
+        MenuTransitionHandler menu = MenuTransitionHandler.TaggedInstance();
+        menu.SendNegativeFeedback();
     }
 
     public void SendObjective()

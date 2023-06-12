@@ -120,6 +120,16 @@ def asset_id_to_color(asset_id):
         return pygame.Color("green")
     elif asset_id == AssetId.GROUND_TILE_STREETLIGHT:
         return pygame.Color("yellow")
+    elif asset_id == AssetId.GROUND_TILE_STREETLIGHT_FOILAGE:
+        return pygame.Color("yellow")
+    elif asset_id == AssetId.STREETLIGHT_BIG:
+        return pygame.Color("yellow")
+    elif asset_id == AssetId.STREETLIGHT_BUSHES:
+        return pygame.Color("yellow")
+    elif asset_id == AssetId.STREETLIGHT_ROCKS:
+        return pygame.Color("yellow")
+    elif asset_id == AssetId.STREETLIGHT_WIDE:
+        return pygame.Color("yellow")
     elif asset_id == AssetId.MOUNTAIN_TILE:
         return pygame.Color("brown")
     elif asset_id == AssetId.RAMP_TO_MOUNTAIN:
@@ -194,6 +204,16 @@ def asset_id_to_icon(asset_id):
         return "server/map_tools/asset_icons/blue_triple_house.png"
     elif asset_id == AssetId.GROUND_TILE_STREETLIGHT:
         return "server/map_tools/asset_icons/streetlight.png"
+    elif asset_id == AssetId.GROUND_TILE_STREETLIGHT_FOILAGE:
+        return "server/map_tools/asset_icons/streetlight_foilage.png"
+    elif asset_id == AssetId.STREETLIGHT_BIG:
+        return "server/map_tools/asset_icons/streetlight_big.png"
+    elif asset_id == AssetId.STREETLIGHT_BUSHES:
+        return "server/map_tools/asset_icons/streetlight_bushes.png"
+    elif asset_id == AssetId.STREETLIGHT_ROCKS:
+        return "server/map_tools/asset_icons/streetlight_rocks.png"
+    elif asset_id == AssetId.STREETLIGHT_WIDE:
+        return "server/map_tools/asset_icons/streetlight_wide.png"
     elif asset_id == AssetId.MOUNTAIN_TILE:
         return ""
     elif asset_id == AssetId.RAMP_TO_MOUNTAIN:

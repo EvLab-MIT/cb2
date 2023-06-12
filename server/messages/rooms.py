@@ -22,6 +22,10 @@ class Role(Enum):
     LEADER = 2
     # Used for scenario rooms to load scenarios and observe game state.
     SPECTATOR = 3
+    # Used when the game is paused, to indicate that neither role is active.
+    PAUSED = 4
+    # Used when the game is temporarily paused (with timeout) to question the follower.
+    QUESTIONING_FOLLOWER = 5
     MAX = 10
 
 
@@ -33,6 +37,8 @@ class JoinResponse(DataClassJSONMixin):
     role: Role  # If joined == true.
     booted_from_queue: bool = False
     boot_reason: Optional[str] = ""
+    game_id: int = -1
+    """The ID of the game that the player joined, if joined is True."""
 
 
 @dataclass(frozen=True)
