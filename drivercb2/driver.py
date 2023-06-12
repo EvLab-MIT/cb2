@@ -1,8 +1,9 @@
 import typing
 from datetime import timedelta, time
 import logging
-import IPython
 import json
+import subprocess
+import argparse
 
 from drivercb2.fixation import show_fixation
 from py_client.demos.scenario_monitor import ScenarioMonitor
@@ -18,10 +19,19 @@ logger = logging.getLogger(__file__)
 def open_url_in_browser(url, executable_path="", ffservice=None):
     from selenium import webdriver
 
-    ffservice = ffservice or webdriver.chrome.service.Service(
-        executable_path="/home/aalok/Downloads/geckodriver/geckodriver-v0.31.0-linux32/geckodriver"
-    )
+    geckopath = subprocess.check_output(["which", "geckodriver"]).decode().strip()
+    if ffservice or geckopath:
+        # executable_path="/home/aalok/Downloads/geckodriver/geckodriver-v0.31.0-linux32/geckodriver"
+        ffservice = ffservice or webdriver.chrome.service.Service(
+            executable_path=geckopath
+        )
+    else:
+        raise ModuleNotFoundError(
+            "`geckodriver` is not in your path. do you have it installed?"
+        )
+
     browser = webdriver.Firefox(service=ffservice)
+
     # launches URL in browser
     browser.get(url)
     # browser.fullscreen_window()
@@ -36,7 +46,7 @@ if __name__ == "__main__":
 
     # show_fixation(0.1)
 
-    url = "http://0.0.0.0:8080"
+    url = "http://localhost:8080"
     suffix = "/play?lobby_name=scenario-lobby&auto=join_game_queue"
 
     open_url_in_browser(url + suffix)
