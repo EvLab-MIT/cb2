@@ -2,6 +2,7 @@ import typing
 from datetime import timedelta, time
 import logging
 import IPython
+import json
 
 from drivercb2.fixation import show_fixation
 from py_client.demos.scenario_monitor import ScenarioMonitor
@@ -23,7 +24,7 @@ def open_url_in_browser(url, executable_path="", ffservice=None):
     browser = webdriver.Firefox(service=ffservice)
     # launches URL in browser
     browser.get(url)
-    browser.fullscreen_window()
+    # browser.fullscreen_window()
 
     return ffservice
 
@@ -36,7 +37,7 @@ if __name__ == "__main__":
     # show_fixation(0.1)
 
     url = "http://0.0.0.0:8080"
-    suffix = "/play?lobby_name=scenario-lobby"
+    suffix = "/play?lobby_name=scenario-lobby&join_game_queue"
 
     open_url_in_browser(url + suffix)
 
@@ -52,6 +53,7 @@ if __name__ == "__main__":
 
     # we have to attach to an existing scenario first to be able to generate a `GameEndpoint` object
     scenario_id = ""  # "robin-black"
+    logger.info(f"trying to attach scenario with id: {scenario_id}")
     game, reason = client.AttachToScenario(
         scenario_id=scenario_id,
         timeout=timedelta(minutes=1),
@@ -64,7 +66,7 @@ if __name__ == "__main__":
         scenario_data = f.read()
 
     # game: GameEndpoint = client.game
-    logger.info(f"trying to attach scenario with id: {scenario_id}")
+    logger.info(f"sending scenario data to game {game}")
     action: Action = Action.LoadScenario(scenario_data)
     game.step(action)
     logger.info(f"sent scenario data to game {game}")
@@ -74,5 +76,7 @@ if __name__ == "__main__":
         game,
         pause_per_turn=(1 / REFRESH_RATE_HZ),  # scenario_data=scenario_data
     )
+    # not sure if it's necessary to have the monitor `join()`, it will keep dumping the events to tty,
+    # instead we prob. need control to stop/load next things
     monitor.run()
     monitor.join()

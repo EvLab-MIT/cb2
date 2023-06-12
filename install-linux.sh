@@ -27,7 +27,8 @@ python3 -m pip install -r requirements.txt
 
 echo "Downloading WebGL client..."
 cd server/www/
-wget https://github.com/lil-lab/cb2/releases/download/deployed-march-2023/WebGL.zip
+# wget https://github.com/lil-lab/cb2/releases/download/deployed-march-2023/WebGL.zip
+wget https://github.com/lil-lab/cb2/releases/download/dev-june-2023/WebGL.zip
 echo "Decompressing client."
 unzip WebGL
 cd -
