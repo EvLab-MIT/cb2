@@ -12,6 +12,7 @@ import statistics
 import sys
 import tempfile
 import time
+import warnings
 import zipfile
 from datetime import datetime, timedelta, timezone
 
@@ -20,6 +21,7 @@ os.environ["PYGAME_HIDE_SUPPORT_PROMPT"] = ""  # Hide pygame welcome message
 import aiohttp
 import fire
 import orjson
+import pdoc
 import peewee
 from aiohttp import web
 from dateutil import parser, tz
@@ -28,10 +30,12 @@ from playhouse.sqlite_ext import SqliteExtDatabase
 import server.db_tools.db_utils as db_utils
 import server.leaderboard as leaderboard
 import server.schemas as schemas
+import server.schemas.client_exception as client_exception_db
 import server.schemas.defaults as defaults
 import server.schemas.event as event_db
 import server.schemas.game as game_db
 import server.schemas.mturk as mturk
+from server.client_exception_logger import ClientExceptionLogger
 from server.config.config import GlobalConfig, InitGlobalConfig
 from server.google_authenticator import GoogleAuthenticator
 from server.lobby_consts import IsMturkLobby, LobbyType
@@ -50,6 +54,7 @@ from server.remote_table import (
 )
 from server.schemas import base
 from server.user_info_fetcher import UserInfoFetcher
+from server.util import HEARTBEAT_TIMEOUT_S
 
 routes = web.RouteTableDef()
 
@@ -59,13 +64,11 @@ DEFAULT_LOBBY = "default"
 OPEN_LOBBY = "open"
 BOT_SANDBOX = "bot-sandbox"
 
-# Constants which determine server behavior.
-HEARTBEAT_TIMEOUT_S = 20.0
-
 logger = logging.getLogger()
 
 google_authenticator = GoogleAuthenticator()
 user_info_fetcher = UserInfoFetcher()
+client_exception_logger = ClientExceptionLogger()
 
 
 async def transmit(ws, message):
@@ -99,6 +102,11 @@ async def transmit_bytes(ws, message):
 @routes.get("/")
 async def Index(request):
     return web.FileResponse("server/www/index.html")
+
+
+@routes.get("/docs")
+async def DocIndex(request):
+    return web.HTTPFound("/docs/index.html")
 
 
 @routes.get("/play")
@@ -144,6 +152,11 @@ async def TaskPage(request):
 @routes.get("/main-study")
 async def TaskPage(request):
     return web.FileResponse("server/www/main-study.html")
+
+
+@routes.get("/mturk-task")
+async def TaskPage(request):
+    return web.FileResponse("server/www/mturk-task.html")
 
 
 @routes.get("/follower-qual")
@@ -454,6 +467,25 @@ download_status = {
 }
 
 
+async def ExceptionSaver(lobbies, config):
+    while True:
+        try:
+            await asyncio.sleep(config.exception_log_interval)
+            # Check mturk lobbies to see if there are any active games.
+            active_game = False
+            for lob in lobbies:
+                if not IsMturkLobby(lob.lobby_type()):
+                    continue
+                if len(lob.room_ids()) > 0:
+                    active_game = True
+                    break
+            if not active_game:
+                logger.info(f"No active games, saving exceptions to DB.")
+                client_exception_logger.save_exceptions_to_db()
+        except Exception as e:
+            logger.exception(e)
+
+
 async def DataDownloader(lobbies):
     global download_requested
     global download_status
@@ -586,6 +618,13 @@ def CleanupDownloadFiles():
         os.remove(file)
 
 
+def SaveClientExceptionsToDB():
+    logger.info(
+        f"Saving {len(client_exception_logger.pending_exceptions())} client exceptions to DB..."
+    )
+    client_exception_logger.save_exceptions_to_db()
+
+
 @routes.get("/data/download_retrieve")
 async def RetrieveData(request):
     global download_status
@@ -621,19 +660,24 @@ async def DataDownloadStart(request):
 @routes.get("/data/game-list")
 async def GameList(request):
     start_time = time.time()
+    # Default to 100 games to reduce load on server.
+    limit_to_100 = True
+    request_query = json.loads(request.query.get("request", "{}"))
+    if "all" in request_query:
+        if request_query["all"]:
+            limit_to_100 = False
     # Get search data from request.
-    games = (
-        game_db.Game.select()
-        .join(
-            mturk.Worker,
-            join_type=peewee.JOIN.LEFT_OUTER,
-            on=(
-                (game_db.Game.leader == mturk.Worker.id)
-                or (game_db.Game.follower == mturk.Worker.id)
-            ),
-        )
-        .order_by(game_db.Game.id.desc())
-    ).limit(100)
+    games = game_db.Game.select().join(
+        mturk.Worker,
+        join_type=peewee.JOIN.LEFT_OUTER,
+        on=(
+            (game_db.Game.leader == mturk.Worker.id)
+            or (game_db.Game.follower == mturk.Worker.id)
+        ),
+    )
+    if limit_to_100:
+        games = games.limit(100)
+    games = games.order_by(game_db.Game.id.desc())
     response = []
     # For convenience, convert timestamps to US eastern time.
     NYC = tz.gettz("America/New_York")
@@ -698,6 +742,32 @@ async def GameList(request):
     end_time = time.time()
     logger.info(f"Search took {end_time - start_time} seconds.")
     return web.json_response(response)
+
+
+@routes.get("/data/client-exception-list")
+async def ClientExceptionList(request):
+    exceptions = client_exception_db.ClientException.select().order_by(
+        client_exception_db.ClientException.date.desc()
+    )
+    responses = [
+        {
+            "id": exception.id.hex,
+            "game_id": exception.game_id,
+            "role": exception.role,
+            "date": str(exception.date),
+            "bug_report": exception.bug_report,
+            "condition": exception.condition,
+            "stack_trace": exception.stack_trace,
+            "type": exception.type,
+        }
+        for exception in exceptions
+    ]
+    return web.json_response(responses)
+
+
+@routes.get("/view/client-exceptions")
+async def ClientExceptionViewer(request):
+    return web.FileResponse("server/www/exceptions_viewer.html")
 
 
 @routes.get("/view/games")
@@ -1020,7 +1090,7 @@ async def stream_game_state(request, ws, lobby):
     while not ws.closed:
         await asyncio.sleep(0)
         poll_period = time.time() - last_loop
-        if (poll_period) > 0.1:
+        if (poll_period) > 0.2:
             logging.warning(
                 f"Transmit socket for iphash {remote.hashed_ip} port {remote.client_port}, slow poll period of {poll_period}s"
             )
@@ -1034,6 +1104,7 @@ async def stream_game_state(request, ws, lobby):
         if not menu_options_updated:
             menu_options_updated = True
             message = message_from_server.MenuOptionsFromServer(lobby.menu_options(ws))
+            # Wait 10ms first,
             await transmit_bytes(ws, orjson.dumps(message, option=orjson.OPT_NAIVE_UTC))
 
         # Handle any authentication confirmations.
@@ -1154,6 +1225,13 @@ async def receive_agent_updates(request, ws, lobby):
 
         if message.type == message_to_server.MessageType.ROOM_MANAGEMENT:
             lobby.handle_request(message, ws)
+            continue
+
+        if message.type == message_to_server.MessageType.CLIENT_EXCEPTION:
+            logger.info(
+                f"========== @@@@@@@@@ ############ $$$$$$$$$$$ Client exception: {message.client_exception}"
+            )
+            client_exception_logger.queue_exception(message.client_exception)
             continue
 
         if message.type == message_to_server.MessageType.PONG:
@@ -1282,11 +1360,20 @@ async def asset(request):
 
 
 async def serve(config):
-    app = web.Application()
+    # Check if the server/www/WebGL directory exists.
+    if not os.path.isdir("server/www/WebGL"):
+        logger.warning(
+            "WebGL directory not found. This directory contains the compiled Unity front-end. You can download it here https://github.com/lil-lab/cb2/releases. You can also compile from source, but this requires installing Unity and getting a license. See game/ for client code and build_client.sh for instructions building the client from headless mode in Unity."
+        )
+        return
 
+    # Serve documentation.
+    routes.static("/docs/", "docs/", show_index=False, append_version=True)
     # Add a route for serving web frontend files on /.
+    routes.static("/docs/", "docs/", show_index=False, append_version=True)
     routes.static("/", "server/www/WebGL")
 
+    app = web.Application()
     app.add_routes(routes)
     runner = runner = aiohttp.web.AppRunner(app, handle_signals=True)
     await runner.setup()
@@ -1313,6 +1400,9 @@ def InitPythonLogging():
     logging.basicConfig(level=logging.INFO, format=log_format)
     logging.getLogger("asyncio").setLevel(logging.INFO)
     logging.getLogger("peewee").setLevel(logging.INFO)
+    # Disable pdoc warnings.
+    warnings.filterwarnings("ignore", module="pdoc")
+    logging.getLogger("pdoc").setLevel(logging.INFO)
 
 
 def InitGameRecording(config):
@@ -1347,6 +1437,31 @@ def InitGameRecording(config):
     base.CreateTablesIfNotExists(defaults.ListDefaultTables())
 
 
+def InitializeDocumentation(config):
+    if not config.generate_documentation:
+        logger.warn(
+            "Skipping documentation generation because config.generate_documentation false."
+        )
+        return
+
+    # Get all top-level modules in the CB2 project by checking the directory
+    # structure.
+    cb2_modules = []
+    for file in os.listdir("."):
+        if not os.path.isdir(file):
+            continue
+        if "__init__.py" in os.listdir(file):
+            cb2_modules.append(file)
+    logger.info(f"Initializing documentation for modules: {cb2_modules}")
+    # Use pdoc to generate static docs in /docs.
+    pdoc.render.configure(
+        favicon="/images/favicon-32x32.png",
+        logo="/images/icon.png",
+        search=True,
+    )
+    pdoc.pdoc(*cb2_modules, output_directory=pathlib.Path("docs"))
+
+
 def CreateDataDirectory(config):
     data_prefix = pathlib.Path(config.data_prefix).expanduser()
 
@@ -1360,26 +1475,17 @@ def CreateExceptionDirectory(config):
     exception_dir.mkdir(parents=False, exist_ok=True)
 
 
-async def profiler():
-    last_print = datetime.now()
-    while True:
-        await asyncio.sleep(1)
-        if datetime.now() - last_print > timedelta(seconds=10):
-            # print(f"====== Profiler ======")
-            # yappi.get_func_stats().print_all()
-            # yappi.get_thread_stats().print_all()
-            last_print = datetime.now()
-
-
 def main(config_filepath="server/config/server-config.yaml"):
     global assets_map
     global lobby
 
     # On exit, deletes temporary download files.
     atexit.register(CleanupDownloadFiles)
+    atexit.register(SaveClientExceptionsToDB)
 
     InitPythonLogging()
     InitGlobalConfig(config_filepath)
+    InitializeDocumentation(GlobalConfig())
 
     logger.info("Config file parsed.")
     logger.info(f"data prefix: {GlobalConfig().data_prefix}")
@@ -1391,9 +1497,7 @@ def main(config_filepath="server/config/server-config.yaml"):
     CreateDataDirectory(GlobalConfig())
     CreateExceptionDirectory(GlobalConfig())
     InitGameRecording(GlobalConfig())
-
-    # yappi.set_clock_type("cpu") # Use set_clock_type("wall") for wall time
-    # yappi.start()
+    client_exception_logger.set_config(GlobalConfig())
 
     lobbies = GetLobbies()
     lobby_coroutines = []
@@ -1408,6 +1512,7 @@ def main(config_filepath="server/config/server-config.yaml"):
         serve(GlobalConfig()),
         MapGenerationTask(lobbies, GlobalConfig()),
         DataDownloader(lobbies),
+        ExceptionSaver(lobbies, GlobalConfig()),
     )
     loop = asyncio.get_event_loop()
     # loop.set_debug(enabled=True)
@@ -1419,13 +1524,6 @@ def main(config_filepath="server/config/server-config.yaml"):
     finally:
         lobby.end_server()
         loop.close()
-
-        # yappi.stop()
-
-        # Export a pstats file.
-        # yappi.get_func_stats().save('yappi.pstat', type='pstat')
-        # yappi.get_func_stats().print_all()
-        # yappi.get_thread_stats().print_all()
 
 
 if __name__ == "__main__":

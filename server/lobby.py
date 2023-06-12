@@ -17,7 +17,7 @@ from dataclasses_json import dataclass_json
 import server.messages.message_from_server as message_from_server
 import server.messages.message_to_server as message_to_server
 import server.schemas.game as game_db
-from server.config.config import GlobalConfig
+from server.config.config import GlobalConfig, LobbyInfo
 from server.lobby_consts import LobbyInfo, LobbyType
 from server.map_provider import CachedMapRetrieval
 from server.messages.logs import GameInfo
@@ -103,6 +103,7 @@ class Lobby(ABC):
         self._lobby_name = lobby_info.name
         self._lobby_comment = lobby_info.comment
         self._game_capacity = lobby_info.game_capacity
+        self._lobby_info = lobby_info
         self._rooms = {}
         self._room_id_assigner = IdAssigner()
         self._remotes = {}  # {ws: SocketInfo}
@@ -325,7 +326,9 @@ class Lobby(ABC):
                             RoomManagementResponse(
                                 RoomResponseType.JOIN_RESPONSE,
                                 None,
-                                JoinResponse(True, 0, Role.FOLLOWER),
+                                JoinResponse(
+                                    True, 0, Role.FOLLOWER, False, "", game_id
+                                ),
                                 None,
                                 None,
                             )
@@ -371,7 +374,7 @@ class Lobby(ABC):
                         RoomManagementResponse(
                             RoomResponseType.JOIN_RESPONSE,
                             None,
-                            JoinResponse(True, 0, Role.LEADER),
+                            JoinResponse(True, 0, Role.LEADER, False, "", room.id()),
                             None,
                             None,
                         )
@@ -380,7 +383,7 @@ class Lobby(ABC):
                         RoomManagementResponse(
                             RoomResponseType.JOIN_RESPONSE,
                             None,
-                            JoinResponse(True, 0, Role.FOLLOWER),
+                            JoinResponse(True, 0, Role.FOLLOWER, False, "", room.id()),
                             None,
                             None,
                         )
@@ -436,7 +439,7 @@ class Lobby(ABC):
                     RoomManagementResponse(
                         RoomResponseType.JOIN_RESPONSE,
                         None,
-                        JoinResponse(True, 0, Role.LEADER),
+                        JoinResponse(True, 0, Role.LEADER, False, "", game_id),
                         None,
                         None,
                     )
@@ -445,7 +448,7 @@ class Lobby(ABC):
                     RoomManagementResponse(
                         RoomResponseType.JOIN_RESPONSE,
                         None,
-                        JoinResponse(True, 0, Role.FOLLOWER),
+                        JoinResponse(True, 0, Role.FOLLOWER, False, "", game_id),
                         None,
                         None,
                     )
@@ -507,6 +510,9 @@ class Lobby(ABC):
         self._rooms[id] = room
         self._rooms[id].start()
         return self._rooms[id]
+
+    def lobby_info(self) -> LobbyInfo:
+        return self._lobby_info
 
     def delete_unused_rooms(self):
         rooms = list(self._rooms.values())
@@ -699,7 +705,7 @@ class Lobby(ABC):
                 RoomManagementResponse(
                     RoomResponseType.JOIN_RESPONSE,
                     None,
-                    JoinResponse(True, -1, Role.SPECTATOR),
+                    JoinResponse(True, -1, Role.SPECTATOR, False, "", room.id()),
                     None,
                     None,
                 )

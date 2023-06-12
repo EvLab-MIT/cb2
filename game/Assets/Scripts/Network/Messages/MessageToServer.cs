@@ -30,6 +30,8 @@ namespace Network
             REPLAY_REQUEST,
             SCENARIO_REQUEST,
             SCENARIO_DOWNLOAD,
+            FEEDBACK_RESPONSE,
+            CLIENT_EXCEPTION,
         }
 
         // These fields are populated for every packet.
@@ -49,6 +51,8 @@ namespace Network
         public GoogleAuth google_auth;
         public ReplayRequest replay_request;
         public ScenarioRequest scenario_request;
+        public FeedbackResponse feedback_response;
+        public ClientException client_exception;
     }
 
 }  // namespace Network

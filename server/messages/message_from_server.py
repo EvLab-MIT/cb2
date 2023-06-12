@@ -11,6 +11,7 @@ from marshmallow import fields
 from mashumaro.mixins.json import DataClassJSONMixin
 
 from server.messages.action import Action
+from server.messages.feedback_questions import FeedbackQuestion
 from server.messages.google_auth import GoogleAuthConfirmation
 from server.messages.live_feedback import LiveFeedback
 from server.messages.map_update import MapUpdate
@@ -20,6 +21,7 @@ from server.messages.prop import Prop, PropUpdate
 from server.messages.replay_messages import ReplayResponse
 from server.messages.rooms import RoomManagementResponse
 from server.messages.scenario import ScenarioResponse
+from server.messages.sound_trigger import SoundTrigger
 from server.messages.state_sync import StateMachineTick, StateSync
 from server.messages.turn_state import TurnState
 from server.messages.tutorials import TutorialResponse
@@ -51,6 +53,9 @@ class MessageType(Enum):
     SCENARIO_RESPONSE = 16
     # Used for configuring a dynamic part of the main menu.
     MENU_OPTIONS = 17
+    # Prompt the follower with feedback questions.
+    SOUND_TRIGGER = 18
+    FEEDBACK_QUESTION = 19
 
 
 def ActionsFromServer(actions):
@@ -352,6 +357,57 @@ def MenuOptionsFromServer(menu_options):
     )
 
 
+def SoundTriggerFromServer(sound_trigger):
+    return MessageFromServer(
+        datetime.utcnow(),
+        MessageType.SOUND_TRIGGER,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        sound_trigger,
+    )
+
+
+def FeedbackQuestionFromServer(feedback_question):
+    return MessageFromServer(
+        datetime.utcnow(),
+        MessageType.FEEDBACK_QUESTION,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        feedback_question,
+    )
+
+
 def ExcludeIfNone(value):
     return value is None
 
@@ -366,20 +422,42 @@ class MessageFromServer(DataClassJSONMixin):
         )
     )
     type: MessageType
-    actions: Optional[List[Action]]
-    map_update: Optional[MapUpdate]
-    state: Optional[StateSync]
-    room_management_response: Optional[RoomManagementResponse]
-    objectives: Optional[List[ObjectiveMessage]]
-    turn_state: Optional[TurnState]
-    tutorial_response: Optional[TutorialResponse]
-    live_feedback: Optional[LiveFeedback] = LiveFeedback()
-    prop_update: Optional[PropUpdate] = PropUpdate()
-    state_machine_tick: Optional[StateMachineTick] = StateMachineTick()
-    google_auth_confirmation: Optional[
-        GoogleAuthConfirmation
-    ] = GoogleAuthConfirmation()
-    user_info: Optional[UserInfo] = UserInfo()
+    actions: Optional[List[Action]] = field(
+        default=None, metadata=config(exclude=ExcludeIfNone)
+    )
+    map_update: Optional[MapUpdate] = field(
+        default=None, metadata=config(exclude=ExcludeIfNone)
+    )
+    state: Optional[StateSync] = field(
+        default=None, metadata=config(exclude=ExcludeIfNone)
+    )
+    room_management_response: Optional[RoomManagementResponse] = field(
+        default=None, metadata=config(exclude=ExcludeIfNone)
+    )
+    objectives: Optional[List[ObjectiveMessage]] = field(
+        default=None, metadata=config(exclude=ExcludeIfNone)
+    )
+    turn_state: Optional[TurnState] = field(
+        default=None, metadata=config(exclude=ExcludeIfNone)
+    )
+    tutorial_response: Optional[TutorialResponse] = field(
+        default=None, metadata=config(exclude=ExcludeIfNone)
+    )
+    live_feedback: Optional[LiveFeedback] = field(
+        default=None, metadata=config(exclude=ExcludeIfNone)
+    )
+    prop_update: Optional[PropUpdate] = field(
+        default=None, metadata=config(exclude=ExcludeIfNone)
+    )
+    state_machine_tick: Optional[StateMachineTick] = field(
+        default=None, metadata=config(exclude=ExcludeIfNone)
+    )
+    google_auth_confirmation: Optional[GoogleAuthConfirmation] = field(
+        default=None, metadata=config(exclude=ExcludeIfNone)
+    )
+    user_info: Optional[UserInfo] = field(
+        default=None, metadata=config(exclude=ExcludeIfNone)
+    )
     prop_spawn: Optional[Prop] = field(
         default=None, metadata=config(exclude=ExcludeIfNone)
     )
@@ -393,5 +471,11 @@ class MessageFromServer(DataClassJSONMixin):
         default=None, metadata=config(exclude=ExcludeIfNone)
     )
     menu_options: Optional[MenuOptions] = field(
+        default=None, metadata=config(exclude=ExcludeIfNone)
+    )
+    sound_trigger: Optional[SoundTrigger] = field(
+        default=None, metadata=config(exclude=ExcludeIfNone)
+    )
+    feedback_question: Optional[FeedbackQuestion] = field(
         default=None, metadata=config(exclude=ExcludeIfNone)
     )

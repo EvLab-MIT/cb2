@@ -60,6 +60,7 @@ class ScenarioState(object):
         game_record,
         log_to_db: bool = True,
         realtime_actions: bool = False,
+        lobby: "server.Lobby" = None,
     ):
         self._room_id = room_id
         self._scenario_id = ""
@@ -69,6 +70,7 @@ class ScenarioState(object):
             use_preset_data=False,
             log_to_db=log_to_db,
             realtime_actions=realtime_actions,
+            lobby=lobby,
         )
 
         # Set the default map to all water. This locks the player in place and prevents movement. When a scenario is loaded, the map will be updated.
@@ -142,6 +144,7 @@ class ScenarioState(object):
             self._scenario_messages[id] = []
         if scenario_request.type == ScenarioRequestType.LOAD_SCENARIO:
             parsed_scenario = Scenario.from_json(scenario_request.scenario_data)
+            logger.info(f"Received color_tint: {parsed_scenario.map.color_tint}")
             self._scenario_id = parsed_scenario.scenario_id
             # Modify turn_state turn_end time to be never...
             updated_turn_state = dataclasses.replace(
@@ -153,6 +156,10 @@ class ScenarioState(object):
             self._state._set_scenario(
                 parsed_scenario
             )  # pylint: disable=protected-access
+            # Force a resync of all actor states.
+            self._state.desync_all()
+            self._state._mark_prop_stale()
+            self._state._mark_map_stale()
             for monitor_id, _ in self._scenario_messages.items():
                 self._scenario_messages[monitor_id].append(
                     ScenarioResponse(
@@ -168,8 +175,8 @@ class ScenarioState(object):
         created_id = self._state.create_actor(role)
 
         if role == Role.SPECTATOR:
-            logger.info(f"Creating monitor with id {created_id}")
             self._scenario_messages[created_id] = []
+            self._state._self_initialize()  # pylint: disable=protected-access
             return created_id
 
         actor = self._state._actors[created_id]  # pylint: disable=protected-access
@@ -202,12 +209,7 @@ class ScenarioState(object):
     def fill_messages(
         self, player_id, out_messages: List[message_from_server.MessageFromServer]
     ) -> bool:
-        """Serializes all messages to one player into a linear history.
-
-        If any messages have been generated this iteration, caps those
-        messages with a StateMachineTick. This lets us separate logic
-        iterations on the receive side.
-        """
+        """Serializes all messages to one player into a linear history."""
         message = self._next_message(player_id)
         messages_added = 0
         while message != None:

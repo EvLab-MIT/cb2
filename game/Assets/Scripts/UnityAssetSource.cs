@@ -50,6 +50,11 @@ public class UnityAssetSource : IAssetSource
         "Prefab/Cards/CardBase_3",
         "Prefab/Mountain/Mountain_Tree",
         "Prefab/Mountain/Snowy_Mountain_Tree",
+        "Prefab/Tiles/GroundTile_StreetLight_Foilage",
+        "Prefab/Tiles/GroundTile_StreetLight_Big",
+        "Prefab/Tiles/GroundTile_StreetLight_Bushes",
+        "Prefab/Tiles/GroundTile_StreetLight_Rocks",
+        "Prefab/Tiles/GroundTile_StreetLight_Wide",
         // These are 2D shapes that appear on card faces.
         "Prefab/Cards/Shapes/Square",
         "Prefab/Cards/Shapes/Star",
@@ -87,6 +92,7 @@ public class UnityAssetSource : IAssetSource
         "Prefab/UI/Instruction_Prefabs/PendingObjective",
         "Prefab/UI/Instruction_Prefabs/CancelledObjective",
         "Prefab/UI/MenuButton",
+        "Prefab/UI/Instruction_Prefabs/FeedbackLine",
     };
 
     public GameObject Load(IAssetSource.AssetId assetId)

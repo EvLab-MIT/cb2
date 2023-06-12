@@ -29,12 +29,15 @@ from server.messages import (
     state_sync,
 )
 from server.messages.action import ActionType, Color
+from server.messages.feedback_questions import FeedbackResponse
 from server.messages.prop import PropUpdate
 from server.messages.rooms import Role
 from server.messages.scenario import Scenario, ScenarioResponse, ScenarioResponseType
+from server.messages.sound_trigger import SoundClipType, SoundTrigger
 from server.messages.state_sync import StateMachineTick
 from server.messages.turn_state import GameOverMessage, TurnUpdate
 from server.state_utils import (
+    FOLLOWER_FEEDBACK_QUESTIONS,
     FOLLOWER_MOVES_PER_TURN,
     FOLLOWER_SECONDS_PER_TURN,
     FOLLOWER_TURN_END_DELAY_SECONDS,
@@ -59,7 +62,12 @@ logger = logging.getLogger(__name__)
 class State(object):
     @classmethod
     def InitializeFromExistingState(
-        cls, room_id, event_uuid: str = "", realtime_actions: bool = False
+        cls,
+        room_id,
+        event_uuid: str = "",
+        realtime_actions: bool = False,
+        lobby: "server.Lobby" = None,
+        log_to_db: bool = False,
     ):
         """Initialize the game from a given event.
 
@@ -79,7 +87,8 @@ class State(object):
             True,
             scenario,
             realtime_actions=realtime_actions,
-            log_to_db=False,
+            log_to_db=log_to_db,
+            lobby=lobby,
         )
         return s, ""
 
@@ -91,6 +100,7 @@ class State(object):
         scenario: Scenario = None,
         log_to_db: bool = True,
         realtime_actions: bool = False,
+        lobby: "server.Lobby" = None,
     ):
         """Initialize the game state.
 
@@ -107,6 +117,7 @@ class State(object):
         """
         self._start_time = datetime.utcnow()
         self._room_id = room_id
+        self._lobby = lobby
 
         # Rolling count of iteration loop. Used to indicate when an iteration of
         # the logic loop has occurred. Sent out in StateMachineTick messages
@@ -147,6 +158,10 @@ class State(object):
         self._prop_stale = (
             {}
         )  # Maps from player_id -> bool if their prop list is stale.
+
+        self._sound_trigger_messages = (
+            {}
+        )  # Maps from player_id -> List[sound trigger messages].
 
         self._ticks = {}  # Maps from player_id -> tick message.
 
@@ -212,6 +227,11 @@ class State(object):
         # Adds card covers.
         self._prop_update = map_utils.CensorCards(self._prop_update, None)
 
+        # Maps from player_id -> list of feedback questions (for transmission).
+        self._feedback_questions = {}
+        # Maps from player_id -> list of feedback questions that have not been answered.
+        self._unanswered_feedback_question = {}
+
     def game_time(self):
         """Return timedelta between now and when the game started."""
         return datetime.utcnow() - self._start_time
@@ -268,7 +288,9 @@ class State(object):
 
     def _self_initialize(self):
         """This exists for scenario_state and other "private" clients to skip the player join initializing process."""
-        logger.info(f"Initializing game with {self._leader} and {self._follower}")
+        logger.debug(
+            f"Initializing game with leader {self._leader} and follower {self._follower}"
+        )
         self._game_recorder.record_initial_state(
             self._iter,
             self._map_provider.map(),
@@ -279,7 +301,7 @@ class State(object):
         )
         self._game_recorder.record_start_of_turn(self._turn_state, "StartOfGame")
         self._initialized = True
-        logger.info(f"Game initialized.")
+        logger.debug(f"Game initialized.")
 
     def update(self):
         send_tick = False
@@ -423,18 +445,17 @@ class State(object):
             (id, feedback) = self._live_feedback_queue.popleft()
             for actor_id in self._actors:
                 self._live_feedback[actor_id] = feedback.signal
-            # Find the follower. TODO(sharf): cleanup code like this in the file...
-            follower = None
-            for actor_id in self._actors:
-                if self._actors[actor_id].role() == Role.FOLLOWER:
-                    follower = self._actors[actor_id]
-                    break
             send_tick = True
             active_instruction = None
             if len(self._instructions) > 0:
                 active_instruction = self._instructions[0]
+                if feedback.signal == live_feedback.FeedbackType.POSITIVE:
+                    active_instruction.pos_feedback += 1
+                elif feedback.signal == live_feedback.FeedbackType.NEGATIVE:
+                    active_instruction.neg_feedback += 1
+                active_instruction.update_feedback_text()
             self._game_recorder.record_live_feedback(
-                feedback, follower, active_instruction
+                feedback, self._follower, active_instruction
             )
 
         # If the follower currently has no instructions, end their turn.
@@ -486,6 +507,8 @@ class State(object):
                         stepping_actor = self._actors[actor_id]
                         break
                 self._game_recorder.record_card_selection(stepping_actor, card)
+            self.queue_leader_sound(SoundClipType.INVALID_SET)
+            self.queue_follower_sound(SoundClipType.INVALID_SET)
 
         if (
             not self._map_provider.selected_cards_collide()
@@ -506,6 +529,20 @@ class State(object):
             self._current_set_invalid = False
             added_turns = 0
             cards_changed = True
+
+            sound_clip_type = SoundClipType.VALID_SET
+            # If the score is 5, 10, 15, or 20, play a different easter egg sound.
+            if self._turn_state.score == 4:
+                sound_clip_type = SoundClipType.EASTER_EGG_SOUND_1
+            elif self._turn_state.score == 9:
+                sound_clip_type = SoundClipType.EASTER_EGG_SOUND_2
+            elif self._turn_state.score == 14:
+                sound_clip_type = SoundClipType.EASTER_EGG_SOUND_3
+            elif self._turn_state.score == 19:
+                sound_clip_type = SoundClipType.EASTER_EGG_SOUND_4
+            self.queue_leader_sound(sound_clip_type)
+            self.queue_follower_sound(sound_clip_type)
+
             added_turns = turn_reward(self._turn_state.sets_collected)
             new_turn_state = TurnUpdate(
                 self._turn_state.turn,
@@ -631,13 +668,37 @@ class State(object):
         return False
 
     def _update_turn(self, force_role_switch=False, end_reason=""):
+        if self._turn_state.turn == Role.PAUSED:
+            return
         opposite_role = (
             Role.LEADER if self._turn_state.turn == Role.FOLLOWER else Role.FOLLOWER
         )
         role_switch = (
             datetime.utcnow() >= self._turn_state.turn_end
         ) or force_role_switch
-        next_role = opposite_role if role_switch else self._turn_state.turn
+        next_role = self._turn_state.turn
+        if role_switch:
+            if (
+                self._turn_state.turn == Role.FOLLOWER
+            ) and self._lobby.lobby_info().follower_feedback_questions:
+                next_role = Role.QUESTIONING_FOLLOWER
+                # Queue up the feedback questions for the follower.
+                for question in FOLLOWER_FEEDBACK_QUESTIONS:
+                    question.uuid = uuid.uuid4()
+                    question.transmit_time_s = (
+                        datetime.utcnow() - self._turn_state.game_start
+                    ).total_seconds()
+                    self._feedback_questions[self._follower.actor_id()].append(question)
+                    self._unanswered_feedback_question[
+                        self._follower.actor_id()
+                    ].append(question)
+                    self._game_recorder.record_feedback_question(question)
+            else:
+                next_role = opposite_role
+        if self._turn_state.turn == Role.QUESTIONING_FOLLOWER:
+            # If there are no pending questions, switch to the leader role.
+            if len(self._unanswered_feedback_question[self._follower.actor_id()]) == 0:
+                self._turn_state.turn = Role.LEADER
         # Force the leader to act if there's no uncompleted instructions.
         turn_skipped = False
         if next_role == Role.FOLLOWER and not self._has_instructions_todo():
@@ -715,6 +776,13 @@ class State(object):
             self._announce_action(card_select_action)
             self._game_recorder.record_card_selection(actor, stepped_on_card)
             self._last_card_step_actor = actor
+            clip_type = (
+                SoundClipType.CARD_SELECT if selected else SoundClipType.CARD_DESELECT
+            )
+            self.queue_sound_clip(actor_id, clip_type)
+            # If the follower selected a card, send the sound to the leader too.
+            if actor.role() == Role.FOLLOWER:
+                self.queue_leader_sound(clip_type)
 
     def drain_messages(self, id, messages):
         for message in messages:
@@ -755,8 +823,20 @@ class State(object):
                 f"Scenario download recvd. Room: {self._room_id}, Player: {id}"
             )
             self._drain_scenario_download(id)
+        elif message.type == message_to_server.MessageType.FEEDBACK_RESPONSE:
+            self._drain_feedback_response(id, message.feedback_response)
         else:
             logger.warn(f"Received unknown packet type: {message.type}")
+
+    def _drain_feedback_response(self, id, feedback_response: FeedbackResponse):
+        if id in self._unanswered_feedback_question:
+            # Find the question that matches the response UUID.
+            self._game_recorder.record_feedback_response(id, feedback_response)
+            player_questions = self._unanswered_feedback_question[id]
+            player_questions = [
+                q for q in player_questions if q.uuid != feedback_response.uuid
+            ]
+            self._unanswered_feedback_question[id] = player_questions
 
     def _drain_actions(self, id, actions):
         for action in actions:
@@ -781,16 +861,53 @@ class State(object):
         self._game_recorder.record_instruction_sent(objective)
         if len(self._instructions) == 0:
             self._game_recorder.record_instruction_activated(objective)
+            self.queue_follower_sound(SoundClipType.INSTRUCTION_RECEIVED)
         self._instructions.append(objective)
         self._instruction_added = True
         for actor_id in self._actors:
             self._instructions_stale[actor_id] = True
+        self.queue_leader_sound(SoundClipType.INSTRUCTION_SENT)
+
+    def queue_leader_sound(self, clip_id: SoundClipType):
+        if not self._leader:
+            return
+        self.queue_sound_clip(self._leader.actor_id(), clip_id)
+
+    def queue_follower_sound(self, clip_id: SoundClipType):
+        if not self._follower:
+            return
+        self.queue_sound_clip(self._follower.actor_id(), clip_id)
+
+    def queue_sound_clip(self, player_id: int, clip_id: SoundClipType):
+        if player_id not in self._actors:
+            logger.warning(
+                "Warning, sound clip received from non-actor ID: {str(player_id)}"
+            )
+            return
+        if self._lobby is None or self._lobby.lobby_info() is None:
+            return
+        if player_id not in self._sound_trigger_messages:
+            self._sound_trigger_messages[player_id] = []
+        self._sound_trigger_messages[player_id].append(
+            SoundTrigger(
+                clip_id,
+                self._lobby.lobby_info().sound_clip_volume,
+            )
+        )
 
     def _drain_instruction_complete(self, id, objective_complete):
         self._instruction_complete_queue.append((id, objective_complete))
 
     def _drain_live_feedback(self, id, feedback):
-        if config.GlobalConfig() and not config.GlobalConfig().live_feedback_enabled:
+        if not config.GlobalConfig():
+            logger.debug(f"Global config not set. Dropping message.")
+            return
+        feedback_enabled = (
+            config.GlobalConfig().live_feedback_enabled
+            or self._lobby.lobby_info().live_feedback_enabled
+            or self._lobby.lobby_info().delayed_feedback_enabled
+        )
+        if not feedback_enabled:
             logger.debug(f"Live feedback disabled. Dropping message.")
             return
         if feedback.signal == live_feedback.FeedbackType.NONE:
@@ -804,6 +921,13 @@ class State(object):
         if self._turn_state.turn != Role.FOLLOWER:
             logger.warn(f"Warning, live feedback received during the leader's turn.")
             return
+        sound_clip = (
+            SoundClipType.POSITIVE_FEEDBACK
+            if feedback.signal == live_feedback.FeedbackType.POSITIVE
+            else SoundClipType.NEGATIVE_FEEDBACK
+        )
+        self.queue_leader_sound(sound_clip)
+        self.queue_follower_sound(sound_clip)
         self._live_feedback_queue.append((id, feedback))
 
     def _drain_turn_complete(self, id, turn_complete):
@@ -860,7 +984,6 @@ class State(object):
             self._instructions_stale[actor_id] = True
 
     def create_actor(self, role):
-        logger.info(f"create_actor() Role: {role}")
         if role in self._preloaded_actors:
             self._actors_added = True
             actor = self._preloaded_actors[role]
@@ -1057,14 +1180,37 @@ class State(object):
             msg = message_from_server.ScenarioResponseFromServer(scenario_response)
             return msg
 
+        feedback_question = self._next_feedback_question(player_id)
+        if not feedback_question is None:
+            logger.debug(
+                f"Room {self._room_id} feedback question {feedback_question} for player_id {player_id}"
+            )
+            msg = message_from_server.FeedbackQuestionFromServer(feedback_question)
+            return msg
+
         tick = self._next_tick(player_id)
         if not tick is None:
             logger.debug(f"Room {self._room_id} tick {tick} for player_id {player_id}")
             msg = message_from_server.StateMachineTickFromServer(tick)
             return msg
 
+        sound_trigger = self._next_sound_trigger(player_id)
+        if not sound_trigger is None:
+            logger.debug(
+                f"Room {self._room_id} sound trigger {sound_trigger} for player_id {player_id}"
+            )
+            msg = message_from_server.SoundTriggerFromServer(sound_trigger)
+            return msg
+
         # Nothing to send.
         return None
+
+    def _next_sound_trigger(self, player_id):
+        if not player_id in self._sound_trigger_messages:
+            return None
+        if len(self._sound_trigger_messages[player_id]) == 0:
+            return None
+        return self._sound_trigger_messages[player_id].pop()
 
     def _next_actions(self, actor_id):
         if not actor_id in self._action_history:
@@ -1088,8 +1234,8 @@ class State(object):
         # Send the latest objective list and mark as fresh for this player.
         self._instructions_stale[actor_id] = False
 
-        # For Leaders it's simple, send the current objective list.
-        if self._actors[actor_id].role() == Role.LEADER:
+        # For Leaders/Spectators it's simple, send the current objective list.
+        if self._actors[actor_id].role() in [Role.LEADER, Role.SPECTATOR]:
             return list(self._instruction_history) + list(self._instructions)
 
         follower_instructions = list(self._instruction_history)
@@ -1154,6 +1300,17 @@ class State(object):
         return ScenarioResponse(
             ScenarioResponseType.SCENARIO_DOWNLOAD, scenario_download
         )
+
+    def _next_feedback_question(self, player_id):
+        if player_id not in self._feedback_questions:
+            return None
+        # pop(0) is inefficient, but this list should only be a few elements
+        # long at a time -- a human has to answer these questions in realtime,
+        # after all.
+        feedback_question = self._feedback_questions[player_id].pop(0)
+        if len(self._feedback_questions[player_id]) == 0:
+            return None
+        return feedback_question
 
     # Returns the current state of the game.
     def state(self, actor_id=-1):
@@ -1238,6 +1395,7 @@ class State(object):
         self._game_recorder.record_instruction_complete(objective_complete)
         if len(self._instructions) > 0:
             self._game_recorder.record_instruction_activated(self._instructions[0])
+            self.queue_follower_sound(SoundClipType.INSTRUCTION_RECEIVED)
         for actor_id in self._actors:
             self._instructions_stale[actor_id] = True
 
@@ -1313,9 +1471,13 @@ class State(object):
                     self._follower = self._actors[follower_id]
                 else:
                     self._preloaded_actors[Role.FOLLOWER] = actor
-        if (self._leader is None) or (Role.LEADER not in self._preloaded_actors):
+        if (self._leader is None and not delayed_actor_load) or (
+            Role.LEADER not in self._preloaded_actors and delayed_actor_load
+        ):
             logger.warn("Warning, scenario did not contain leader")
-        if (self._follower is None) or (Role.FOLLOWER not in self._preloaded_actors):
+        if (self._follower is None and not delayed_actor_load) or (
+            Role.FOLLOWER not in self._preloaded_actors and delayed_actor_load
+        ):
             logger.warn("Warning, scenario did not contain follower")
         # Mark everything as stale.
         self._mark_map_stale()

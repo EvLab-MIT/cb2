@@ -2,8 +2,12 @@ import dataclasses
 import logging
 import math
 import random
-import tkinter
-from tkinter.filedialog import askopenfilename, asksaveasfilename
+
+# Only import these on execution. This prevents pdoc from failing to build the docs.
+# tkinter isn't a server dependency, so it's not available in the server environment.
+if __name__ == "__main__":
+    import tkinter
+    from tkinter.filedialog import askopenfilename, asksaveasfilename
 from typing import Tuple
 
 import pygame
@@ -32,6 +36,11 @@ from server.map_utils import (
     GroundTileStones,
     GroundTileStonesSnow,
     GroundTileStreetLight,
+    GroundTileStreetLightBig,
+    GroundTileStreetLightBushes,
+    GroundTileStreetLightFoilage,
+    GroundTileStreetLightRocks,
+    GroundTileStreetLightWide,
     GroundTileTree,
     GroundTileTreeBrown,
     GroundTileTreeRocks,
@@ -55,9 +64,8 @@ FONT = pygame.freetype.SysFont("Arial", 30)
 
 logger = logging.getLogger(__name__)
 
-SCREEN_SIZE = (
-    800  # The size of the map. We override the pygame window size to add tool panels.
-)
+# The size of the map. We override the pygame window size to add tool panels.
+SCREEN_SIZE = 800
 
 tile_generators = [
     GroundTile,
@@ -85,7 +93,12 @@ tile_generators = [
     lambda x: GroundTileHouse(x, HouseType.TRIPLE_HOUSE),
     lambda x: GroundTileHouse(x, HouseType.TRIPLE_HOUSE_RED),
     lambda x: GroundTileHouse(x, HouseType.TRIPLE_HOUSE_BLUE),
-    GroundTileStreetLight,
+    lambda x: GroundTileStreetLight(x, preference=AssetId.GROUND_TILE_STREETLIGHT),
+    GroundTileStreetLightFoilage,
+    GroundTileStreetLightBig,
+    GroundTileStreetLightBushes,
+    GroundTileStreetLightRocks,
+    GroundTileStreetLightWide,
     MountainTile,
     MountainTileTree,
     RampToMountain,
@@ -175,13 +188,14 @@ def edit_scenario(scenario: Scenario) -> Scenario:
     # exit button in the top right.
 
     # Draw the tool window.
-    tool_window = pygame.Surface((120, SCREEN_SIZE + 20))
+    tool_window_height = (len(tile_generators) // 3 + 1) * 50 + 10
+    tool_window = pygame.Surface((170, tool_window_height))
     tool_window.fill((200, 230, 230))
 
     # Each panel in the tool window is an icon from the asset list. Draw it in a Nx2 grid vertically.
     tile_generator_coords = {}
     for i, tile_generator in enumerate(tile_generators):
-        coordinates = ((i % 2) * 50 + 35, (i // 2) * 50 + 35)
+        coordinates = ((i % 3) * 50 + 35, (i // 3) * 50 + 35)
         global_coordinates = (coordinates[0] + SCREEN_SIZE, coordinates[1] + 10)
         tile = tile_generator(0)  # Rotation 0.
         draw_tile(tool_window, tile, coordinates, 50, 50)
@@ -242,7 +256,9 @@ def edit_scenario(scenario: Scenario) -> Scenario:
     # Draw the save button.
     save_button = pygame.Surface((50, 50))
     save_button.fill((0, 255, 0))
-    save_button_rect = pygame.rect.Rect(SCREEN_SIZE + 0, SCREEN_SIZE + 50, 50, 50)
+    save_button_rect = pygame.rect.Rect(
+        SCREEN_SIZE + 0, tool_window_height + 50, 50, 50
+    )
     # Draw the text save on the button.
     text, _ = FONT.render("Save", True, (0, 0, 0))
     save_button.blit(text, save_button_rect.center)
@@ -250,7 +266,9 @@ def edit_scenario(scenario: Scenario) -> Scenario:
     # Draw a clear all button.
     clear_button = pygame.Surface((50, 50))
     clear_button.fill((255, 0, 0))
-    clear_button_rect = pygame.rect.Rect(SCREEN_SIZE + 50, SCREEN_SIZE + 50, 50, 50)
+    clear_button_rect = pygame.rect.Rect(
+        SCREEN_SIZE + 50, tool_window_height + 50, 50, 50
+    )
     # Draw the text clear on the button.
     text, _ = FONT.render("Clear", True, (0, 0, 0))
     clear_button.blit(text, clear_button_rect.center)

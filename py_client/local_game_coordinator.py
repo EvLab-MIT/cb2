@@ -16,6 +16,9 @@ import pygame
 import server.schemas.game as game_db
 from py_client.game_endpoint import GameEndpoint
 from py_client.game_socket import GameSocket
+from server.lobbies.open_lobby import OpenLobby
+from server.lobby import Lobby
+from server.lobby_consts import LobbyInfo, LobbyType
 from server.map_tools.visualize import GameDisplay
 from server.messages.rooms import Role
 from server.messages.tutorials import (
@@ -30,6 +33,9 @@ from server.util import GetCommitHash
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_LOBBY = OpenLobby(
+    LobbyInfo(LobbyType.OPEN, "default local game coordinator lobby")
+)
 
 # pylint: disable=protected-access
 class LocalSocket(GameSocket):
@@ -65,8 +71,9 @@ class LocalSocket(GameSocket):
         """This is a local socket. We don't need to worry about timeouts. No blocking operations."""
         # Give the state machine a chance to run.
         end_time = datetime.utcnow() + timeout
-        # Wait until we have at least one message to return.
-        while datetime.utcnow() < end_time:
+        ran_once = False
+        # Wait until we have at least one message to return. Run at least once.
+        while datetime.utcnow() < end_time or not ran_once:
             self.local_coordinator.StepGame(self.game_name)
             state_machine_driver = self.local_coordinator._state_machine_driver(
                 self.game_name
@@ -74,6 +81,7 @@ class LocalSocket(GameSocket):
             state_machine_driver.fill_messages(self.actor_id, self.received_messages)
             if len(self.received_messages) > 0:
                 return self.received_messages.popleft(), ""
+            ran_once = True
         return None, "No messages available."
 
 
@@ -97,7 +105,12 @@ class LocalGameCoordinator:
         self._render_follower = render_follower
         self._config = config
 
-    def CreateGame(self, log_to_db: bool = True, realtime_actions: bool = False):
+    def CreateGame(
+        self,
+        log_to_db: bool = True,
+        realtime_actions: bool = False,
+        lobby: Lobby = DEFAULT_LOBBY,
+    ):
         """Creates a new game. Exactly two agents can join this game with JoinGame().
 
         Returns the game name.
@@ -131,12 +144,18 @@ class LocalGameCoordinator:
         else:
             game_record = None
         state_machine = State(
-            room_id, game_record, log_to_db=log_to_db, realtime_actions=False
+            room_id,
+            game_record,
+            log_to_db=log_to_db,
+            realtime_actions=False,
+            lobby=lobby,
         )
         self._game_drivers[game_name] = StateMachineDriver(state_machine, room_id)
         return game_name
 
-    def CreateGameFromDatabase(self, event_uuid: str):
+    def CreateGameFromDatabase(
+        self, event_uuid: str, log_to_db: bool = False, lobby: Lobby = DEFAULT_LOBBY
+    ):
         """Creates a new game from a specific instruction in a recorded game.
 
         Exactly two agents can join this game with JoinGame().
@@ -151,7 +170,11 @@ class LocalGameCoordinator:
 
         # For cards, take all cards so far and then delete any CardSets().
         state_machine, reason = State.InitializeFromExistingState(
-            room_id, event_uuid, realtime_actions=False
+            room_id,
+            event_uuid,
+            realtime_actions=False,
+            log_to_db=log_to_db,
+            lobby=lobby,
         )
         assert (
             state_machine is not None
@@ -223,6 +246,13 @@ class LocalGameCoordinator:
     def JoinTutorial(self, game_name, role: Role):
         """Joins a tutorial with the given name.
 
+        Returns a Game object used to interact with the game.
+        """
+        return self.JoinSinglePlayerGame(game_name, role)
+
+    def JoinSinglePlayerGame(self, game_name, role: Role):
+        """Joins a single player game with the given name.
+
         If the game doesn't exist, crashes.
 
         Returns a Game object used to interact with the game.
@@ -236,19 +266,12 @@ class LocalGameCoordinator:
         game_driver = self._game_drivers[game_name]
         state_machine = game_driver.state_machine()
 
-        number_players = len(state_machine.player_ids())
-
-        if number_players != 1:
-            raise Exception(
-                f"Game is not ready for player! Number of players: {len(state_machine.player_ids())}"
-            )
-
-        # If the game has one player, join as leader. Else, follow.
         actor_id = state_machine.create_actor(role)
         render = self._render_leader if role == Role.LEADER else self._render_follower
         game_endpoint = GameEndpoint(
             LocalSocket(self, game_name, actor_id), self._config, render
         )
+
         # Register endpoints for this game so we can initialize them in StartGame().
         if role == Role.LEADER:
             self._game_endpoints[game_name] = (game_endpoint, None)
