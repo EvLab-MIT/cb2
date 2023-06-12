@@ -37,7 +37,7 @@ if __name__ == "__main__":
     # show_fixation(0.1)
 
     url = "http://0.0.0.0:8080"
-    suffix = "/play?lobby_name=scenario-lobby&join_game_queue"
+    suffix = "/play?lobby_name=scenario-lobby&auto=join_game_queue"
 
     open_url_in_browser(url + suffix)
 
