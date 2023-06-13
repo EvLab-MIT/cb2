@@ -39,6 +39,7 @@ cd -
 echo "Downloading kmonad binary for keyboard remapping"
 cd drivercb2
 wget https://github.com/kmonad/kmonad/releases/download/0.4.1/kmonad-0.4.1-linux
+chmod +x ./kmonad-0.4.1-linux
 echo "done"
 cd -
 
