@@ -11,10 +11,6 @@
 
 import pygame
 
-# def quit():
-#    return
-
-
 def init_screen() -> pygame.Surface:
     #  create the window
     screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
@@ -68,6 +64,60 @@ def show_fixation(t: int = 3):
             quit_button_pressed = True
             pygame.quit()
             return
+
+def draw_text(text, screen):
+
+    screen.fill(pygame.Color("white"))
+    font = pygame.font.Font(pygame.font.get_default_font(), 45)
+    text = font.render(text, True, pygame.Color("black"))
+    
+    W, H = screen.get_size()
+
+    text_rect = text.get_rect(center=(W/2, H/2))
+    screen.blit(text, text_rect)
+    pygame.display.flip()
+
+
+def accept_key(keycode, keyname):
+
+    pygame.init()
+
+    screen = init_screen()
+    W, H = screen.get_size()
+    pygame.display.set_caption("Practice buttonpress")
+
+    draw_text(f"Please press {keyname}", screen)
+
+    correct_button_pressed = False
+    while not correct_button_pressed:
+        pygame.time.wait(10) # milliseconds
+
+        for event in pygame.event.get():
+            print(event)
+
+            if event.type == pygame.KEYDOWN and event.key == keycode:
+                correct_button_pressed = True
+                draw_text(f"Success!", screen)
+                pygame.quit()
+
+            elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+                correct_button_pressed = True
+                pygame.quit()
+                return False
+
+            elif event.type == pygame.KEYDOWN:
+
+                draw_text(f"Wrong key! Please press: {keyname}", screen)
+
+
+    return True
+
+
+def test_arrow_keys():
+    accept_key(pygame.K_UP, 'Forwards') and \
+    accept_key(pygame.K_DOWN, 'Backwards') and \
+    accept_key(pygame.K_LEFT, 'Left') and \
+    accept_key(pygame.K_RIGHT, 'Right')
 
 
 if __name__ == "__main__":

@@ -4,13 +4,15 @@ import logging
 import json
 import subprocess
 import argparse
+import easygui
 
-from drivercb2.fixation import show_fixation
 from py_client.demos.scenario_monitor import ScenarioMonitor
 from py_client.remote_client import RemoteClient
 from py_client.game_endpoint import Action, GameEndpoint
 from py_client.local_game_coordinator import LocalGameCoordinator
-import easygui
+
+from drivercb2.fixation import show_fixation, test_arrow_keys
+from drivercb2 import remapkeys
 
 REFRESH_RATE_HZ = 10
 logger = logging.getLogger(__file__)
@@ -39,10 +41,15 @@ def open_url_in_browser(url, executable_path="", ffservice=None):
     return ffservice
 
 
-if __name__ == "__main__":
+def main():
     kvals = dict(
         subject_id=easygui.enterbox("Subject ID: ", default="FED_2023----a_3Tn")
     )
+
+    remapkeys.remap()
+
+    easygui.ccbox("Test your buttonbox!")
+    test_arrow_keys()
 
     # show_fixation(0.1)
 
@@ -72,6 +79,7 @@ if __name__ == "__main__":
 
     assert game is not None, f"couldn't AttachToScenario `{scenario_id}`"
 
+
     scenario_file = "scenarios/hehe.json"
     with open(scenario_file, "r") as f:
         scenario_data = f.read()
@@ -90,5 +98,13 @@ if __name__ == "__main__":
 
     # not sure if it's necessary to have the monitor `join()`, it will keep dumping the events to tty,
     # instead we prob. need control to stop/load next things
+
     # monitor.run()
     # monitor.join()
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except KeyboardInterrupt:
+        remapkeys.reset()
