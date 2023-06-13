@@ -41,12 +41,13 @@ def open_url_in_browser(url, executable_path="", ffservice=None):
 
 if __name__ == "__main__":
     kvals = dict(
-        # subject_id=easygui.enterbox("Subject ID: ", default="FED_2023----a_3Tn")
+        subject_id=easygui.enterbox("Subject ID: ", default="FED_2023----a_3Tn")
     )
 
     # show_fixation(0.1)
 
     url = "http://localhost:8080"
+    # url = "http://cb2.ai"
     suffix = "/play?lobby_name=scenario-lobby&auto=join_game_queue"
 
     open_url_in_browser(url + suffix)
@@ -86,7 +87,8 @@ if __name__ == "__main__":
         game,
         pause_per_turn=(1 / REFRESH_RATE_HZ),  # scenario_data=scenario_data
     )
+
     # not sure if it's necessary to have the monitor `join()`, it will keep dumping the events to tty,
     # instead we prob. need control to stop/load next things
-    monitor.run()
-    monitor.join()
+    # monitor.run()
+    # monitor.join()
