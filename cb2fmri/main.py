@@ -79,6 +79,7 @@ def main():
 
     assert game is not None, f"couldn't AttachToScenario `{scenario_id}`"
 
+
     scenario_file = "scenarios/hehe.json"
     with open(scenario_file, "r") as f:
         scenario_data = f.read()
@@ -97,6 +98,7 @@ def main():
 
     # not sure if it's necessary to have the monitor `join()`, it will keep dumping the events to tty,
     # instead we prob. need control to stop/load next things
+    
     # monitor.run()
     # monitor.join()
 
