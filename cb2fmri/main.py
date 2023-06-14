@@ -11,8 +11,8 @@ from py_client.remote_client import RemoteClient
 from py_client.game_endpoint import Action, GameEndpoint
 from py_client.local_game_coordinator import LocalGameCoordinator
 
-from drivercb2.fixation import show_fixation, test_arrow_keys
-from drivercb2 import remapkeys
+from cb2fmri.fixation import show_fixation, test_arrow_keys
+from cb2fmri import remapkeys
 
 REFRESH_RATE_HZ = 10
 logger = logging.getLogger(__file__)
@@ -78,7 +78,6 @@ def main():
     )
 
     assert game is not None, f"couldn't AttachToScenario `{scenario_id}`"
-
 
     scenario_file = "scenarios/hehe.json"
     with open(scenario_file, "r") as f:
