@@ -79,7 +79,6 @@ def main():
 
     assert game is not None, f"couldn't AttachToScenario `{scenario_id}`"
 
-
     scenario_file = "scenarios/hehe.json"
     with open(scenario_file, "r") as f:
         scenario_data = f.read()
