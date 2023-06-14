@@ -46,6 +46,7 @@ def open_url_in_browser(url, executable_path="", ffservice=None, fullscreen=True
 
 
 def main():
+    
     parser = argparse.ArgumentParser("cb2fmri")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--url", type=str, default="http://localhost:8080")
