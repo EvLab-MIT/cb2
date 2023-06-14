@@ -5,6 +5,7 @@ import json
 import subprocess
 import argparse
 import easygui
+import time
 
 from py_client.demos.scenario_monitor import ScenarioMonitor
 from py_client.remote_client import RemoteClient
@@ -18,12 +19,14 @@ REFRESH_RATE_HZ = 10
 logger = logging.getLogger(__file__)
 
 
-def open_url_in_browser(url, executable_path="", ffservice=None):
+def open_url_in_browser(url, executable_path="", ffservice=None, fullscreen=True):
     from selenium import webdriver
 
-    geckopath = subprocess.check_output(["which", "geckodriver"]).decode().strip()
+    geckopath = (
+        executable_path
+        or subprocess.check_output(["which", "geckodriver"]).decode().strip()
+    )
     if ffservice or geckopath:
-        # executable_path="/home/aalok/Downloads/geckodriver/geckodriver-v0.31.0-linux32/geckodriver"
         ffservice = ffservice or webdriver.chrome.service.Service(
             executable_path=geckopath
         )
@@ -36,28 +39,35 @@ def open_url_in_browser(url, executable_path="", ffservice=None):
 
     # launches URL in browser
     browser.get(url)
-    # browser.fullscreen_window()
+    if fullscreen:
+        browser.fullscreen_window()
 
     return ffservice
 
 
 def main():
-    kvals = dict(
-        subject_id=easygui.enterbox("Subject ID: ", default="FED_2023----a_3Tn")
-    )
+    parser = argparse.ArgumentParser("cb2fmri")
+    parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--url", type=str, default="http://localhost:8080")
+    parser.add_argument("--lobby", type=str, default="scenario-lobby")
+    parser.add_argument("--no-launch-browser", action="store_true")
+
+    args = parser.parse_args()
+
+    kvals = {
+        "subject_id": easygui.enterbox("Subject ID: ", default="FED_2023MMDDa_3Tn")
+    }
 
     remapkeys.remap()
-
     easygui.ccbox("Test your buttonbox!")
     test_arrow_keys()
 
-    # show_fixation(0.1)
+    url = f"{args.url}/play?lobby_name={args.lobby}&auto=join_game_queue"
 
-    url = "http://localhost:8080"
-    # url = "http://cb2.ai"
-    suffix = "/play?lobby_name=scenario-lobby&auto=join_game_queue"
+    if not args.no_launch_browser:
+        open_url_in_browser(url, fullscreen=not args.dry_run)
 
-    open_url_in_browser(url + suffix)
+    show_fixation(1)
 
     client = RemoteClient(url=url, lobby_name="scenario-lobby")
     connected, reason = client.Connect()
@@ -81,11 +91,14 @@ def main():
 
     scenario_file = "scenarios/hehe.json"
     with open(scenario_file, "r") as f:
-        scenario_data = f.read()
+        scenario_data_json = f.read()
+    scenario_data = json.loads(scenario_data)
+    scenario_data["kvals"] = kvals
+    scenario_data_json = json.dumps(scenario_data)
 
     # game: GameEndpoint = client.game
     logger.info(f"sending scenario data to game {game}")
-    action: Action = Action.LoadScenario(scenario_data)
+    action: Action = Action.LoadScenario(scenario_data_json)
     game.step(action)
     logger.info(f"sent scenario data to game {game}")
 
