@@ -8,7 +8,19 @@ pertaining to running the experiment in an fMRI scanner. The parent directory is
 
 # Usage
 
+There are two components to running this.
+
+## 1. CB2 game server
+
+Parallelly (refer to [parent README](../README.md) for more info), also run an instance of the
+`cb2` server that we can interact with and use to serve scenarios: 
+```bash
+python3 -m server.main --config_filepath="server/config/local-config.yaml"
+```
+
+## 2. CB2 experiment driver
+
 The experiment driver program is run as a module from the parent directory like so:
 ```bash
-    python -m cb2fmri.main
+python -m cb2fmri.main
 ```
