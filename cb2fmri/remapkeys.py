@@ -21,6 +21,9 @@ class KmonadProcessTracker:
         a non-consequential action just so our
         script can obtain sudo privileges for later
         """
+        logger.info(
+            "a non-consequential action, 'ls' just so our script can obtain sudo privileges for later"
+        )
         subprocess.Popen(["sudo", "ls"])
 
     def remap(self):
@@ -30,4 +33,5 @@ class KmonadProcessTracker:
         self.proc = subprocess.Popen([self.binary, self.config])
 
     def reset(self):
+        logger.info("shutting down kmonad process")
         self.proc.terminate()

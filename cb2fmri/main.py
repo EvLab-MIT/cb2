@@ -16,6 +16,8 @@ from cb2fmri.fixation import show_fixation, test_arrow_keys
 from cb2fmri import remapkeys
 
 REFRESH_RATE_HZ = 10
+
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__file__)
 
 
@@ -38,6 +40,7 @@ def open_url_in_browser(url, executable_path="", ffservice=None, fullscreen=True
     browser = webdriver.Firefox(service=ffservice)
 
     # launches URL in browser
+    logger.info(f"opening up a browser window using {geckopath} to URL {url}")
     browser.get(url)
     if fullscreen:
         browser.fullscreen_window()
@@ -57,6 +60,7 @@ def main():
     kvals = {
         "subject_id": easygui.enterbox("Subject ID: ", default="FED_2023MMDDa_3Tn")
     }
+    logger.info(f'SUBJECT_ID: {kvals["subject_id"]}')
 
     remapkeys.remap()
     easygui.ccbox("Test your buttonbox!")
@@ -88,21 +92,9 @@ def main():
     )
 
     assert game is not None, f"couldn't AttachToScenario `{scenario_id}`"
-
-    scenario_file = "scenarios/hehe.json"
-    with open(scenario_file, "r") as f:
-        scenario_data_json = f.read()
-    scenario_data = json.loads(scenario_data)
-    scenario_data["kvals"] = kvals
-    scenario_data_json = json.dumps(scenario_data)
-
-    # game: GameEndpoint = client.game
-    logger.info(f"sending scenario data to game {game}")
-    action: Action = Action.LoadScenario(scenario_data_json)
-    game.step(action)
-    logger.info(f"sent scenario data to game {game}")
-
-    logger.info(f"starting {ScenarioMonitor} intance")
+    logger.info(
+        f"starting {ScenarioMonitor} intance to monitor happenings in the scenario (is this necessary?)"
+    )
     monitor = ScenarioMonitor(
         game,
         pause_per_turn=(1 / REFRESH_RATE_HZ),  # scenario_data=scenario_data
