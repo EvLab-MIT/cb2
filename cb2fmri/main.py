@@ -108,12 +108,6 @@ def main():
         pause_per_turn=(1 / REFRESH_RATE_HZ),  # scenario_data=scenario_data
     )
 
-    # not sure if it's necessary to have the monitor `join()`, it will keep dumping the events to tty,
-    # instead we prob. need control to stop/load next things
-
-    # monitor.run()
-    # monitor.join()
-
 
 if __name__ == "__main__":
     try:
