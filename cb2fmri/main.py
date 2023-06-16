@@ -57,19 +57,24 @@ def main(kmonad=None):
     args = parser.parse_args()
 
     # collect SUBJECT_ID to keep track
-    kvals = {
-        "subject_id": easygui.enterbox(
-            "Subject ID: ", default=f"FED_2023{time.strftime('%m%d')}x_3Tn"
+    subject_id, run_no = (
+        easygui.multenterbox(
+            msg="",
+            title="",
+            fields=("Subject ID: ", "Run #: "),
+            values=(f"FED_2023{time.strftime('%m%d')}x_3Tn", -1),
         )
         if not args.test
         else "TEST"
-    }
+    )
 
-    if kvals["subject_id"] is None:
-        logger.info(f"SUBJECT_ID not provided. exiting.")
+    kvals = {"subject_id": subject_id, "run": run_no}
+
+    if kvals["subject_id"] is None or kvals["run"] is None:
+        logger.info(f"SUBJECT_ID or RUN# not provided. exiting.")
         exit()
 
-    logger.info(f'SUBJECT_ID: {kvals["subject_id"]}')
+    logger.info(f'SUBJECT_ID: {kvals["subject_id"]}\nRUN#: {repr(kvals["run"])}')
 
     # use selenium to open up a browser to the game server instance
     # (NOTE: game server instance must be started separately, and is not done via this script.
@@ -109,7 +114,7 @@ def main(kmonad=None):
                 "If you're in the lobby, click 'JOIN GAME' now! "
                 + "Have you joined a game yet?"
             )
-        ),
+        )
     )
 
     # we have to attach to an existing scenario first to be able to generate a `GameEndpoint` object
@@ -118,8 +123,7 @@ def main(kmonad=None):
     scenario_id = ""
     logger.info(f"trying to attach scenario with id: {scenario_id}")
     game, reason = client.AttachToScenario(
-        scenario_id=scenario_id,
-        timeout=timedelta(minutes=1),
+        scenario_id=scenario_id, timeout=timedelta(minutes=1)
     )
 
     assert game is not None, f"couldn't AttachToScenario `{scenario_id}`"
