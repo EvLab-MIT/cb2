@@ -1,6 +1,6 @@
 #| --------------------------------------------------------------------------
 
-               CerealBar2 kmonad configuration
+              ANTI CerealBar2 kmonad configuration
 
 	essentially we are remapping the keys 1,2,3,4 to the arrow keys
 	so that participants in an fMRI experiment can use MRI-safe button
@@ -143,10 +143,6 @@
 
   -------------------------------------------------------------------------- |#
 
-(defalias
-  addfmri  (layer-add fmri) ;; adds on the fmri layer
-  remfmri  (layer-rem fmri) ;; removes the fmri layer
-)
 
 #| --------------------------------------------------------------------------
                      Necessary: at least 1 `deflayer` block
@@ -191,7 +187,7 @@
                      Optional: as many layers as you please
   -------------------------------------------------------------------------- |#
 
-(deflayer fmri
-  up	down	left	right	=
+(deflayer main
+  1 2 3 4	=
 )
 
