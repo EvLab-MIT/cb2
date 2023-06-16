@@ -24,14 +24,18 @@ class KmonadProcessTracker:
         logger.info(
             "a non-consequential action, 'ls' just so our script can obtain sudo privileges for later"
         )
-        subprocess.Popen(["sudo", "ls"])
+        subprocess.call(["sudo", "ls"])
 
     def remap(self):
         logger.info(
             f"opening a process with binary {self.binary} and config {self.config}"
         )
-        self.proc = subprocess.Popen([self.binary, self.config])
+        # without sudo, we get: kmonad-0.4.1-linux: /dev/uinput: openFd: permission denied (Permission denied)
+        self.proc = subprocess.Popen(
+            " ".join(["sudo", self.binary, self.config]), shell=True
+        )
 
     def reset(self):
         logger.info("shutting down kmonad process")
         self.proc.terminate()
+        subprocess.Popen(" ".join(["sudo", "pkill", "kmonad"]), shell=True)
