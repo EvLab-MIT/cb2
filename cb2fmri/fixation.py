@@ -10,6 +10,10 @@
 """
 
 import pygame
+import logging
+
+logger = logging.getLogger(__file__)
+
 
 def init_screen() -> pygame.Surface:
     #  create the window
@@ -22,7 +26,7 @@ def draw_fixation_cross(x, y, screen, length=20, width=5, color=pygame.Color("bl
     pygame.draw.line(screen, color, (x - length, y), (x + length, y), width)
 
 
-def show_fixation(t: int = 3):
+def show_fixation(t: int):
     # shows fixation cross for t **seconds** and then quits
 
     pygame.init()
@@ -49,7 +53,8 @@ def show_fixation(t: int = 3):
         pygame.time.wait(10)
 
         for event in pygame.event.get():
-            # print(event)
+            logger.debug(event)
+
             if event.type == pygame.QUIT:
                 quit_button_pressed = True
                 pygame.quit()
@@ -65,21 +70,20 @@ def show_fixation(t: int = 3):
             pygame.quit()
             return
 
-def draw_text(text, screen):
 
+def draw_text(text, screen):
     screen.fill(pygame.Color("white"))
     font = pygame.font.Font(pygame.font.get_default_font(), 45)
     text = font.render(text, True, pygame.Color("black"))
-    
+
     W, H = screen.get_size()
 
-    text_rect = text.get_rect(center=(W/2, H/2))
+    text_rect = text.get_rect(center=(W / 2, H / 2))
     screen.blit(text, text_rect)
     pygame.display.flip()
 
 
 def accept_key(keycode, keyname):
-
     pygame.init()
 
     screen = init_screen()
@@ -90,10 +94,10 @@ def accept_key(keycode, keyname):
 
     correct_button_pressed = False
     while not correct_button_pressed:
-        pygame.time.wait(10) # milliseconds
+        pygame.time.wait(10)  # milliseconds
 
         for event in pygame.event.get():
-            print(event)
+            logger
 
             if event.type == pygame.KEYDOWN and event.key == keycode:
                 correct_button_pressed = True
@@ -106,19 +110,18 @@ def accept_key(keycode, keyname):
                 return False
 
             elif event.type == pygame.KEYDOWN:
-
                 draw_text(f"Wrong key! Please press: {keyname}", screen)
-
 
     return True
 
 
-def test_arrow_keys():
-    accept_key(pygame.K_UP, 'Forwards') and \
-    accept_key(pygame.K_DOWN, 'Backwards') and \
-    accept_key(pygame.K_LEFT, 'Left') and \
-    accept_key(pygame.K_RIGHT, 'Right')
+def practice_arrow_keys():
+    accept_key(pygame.K_UP, "[Forwards]") and accept_key(
+        pygame.K_DOWN, "[Backwards]"
+    ) and accept_key(pygame.K_LEFT, "[<< Turn Left]") and accept_key(
+        pygame.K_RIGHT, "[Turn Right >>]"
+    )
 
 
 if __name__ == "__main__":
-    show_fixation()
+    show_fixation(5)
