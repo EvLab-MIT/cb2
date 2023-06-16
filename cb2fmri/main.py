@@ -7,12 +7,13 @@ import argparse
 import easygui
 import time
 
+
 from py_client.demos.scenario_monitor import ScenarioMonitor
 from py_client.remote_client import RemoteClient
 from py_client.game_endpoint import Action, GameEndpoint
 from py_client.local_game_coordinator import LocalGameCoordinator
 
-from cb2fmri.fixation import show_fixation, test_arrow_keys
+from cb2fmri.fixation import show_fixation, practice_arrow_keys
 from cb2fmri.remapkeys import KmonadProcessTracker
 
 REFRESH_RATE_HZ = 10
@@ -54,8 +55,8 @@ def load_scenario(
     # test some scenario file to try to join
     with open(scenario_file, "r") as f:
         scenario_data_json = f.read()
-    scenario_data = json.loads(scenario_data)
-    if kvals not in scenario_data:
+    scenario_data = json.loads(scenario_data_json)
+    if "kvals" not in scenario_data:
         scenario_data["kvals"] = {}
     scenario_data["kvals"].update(kvals)
     scenario_data_json = json.dumps(scenario_data)
@@ -74,18 +75,27 @@ def main(kmonad=None):
     logger.info("hello! this is CB2fMRI.")
 
     parser = argparse.ArgumentParser("cb2fmri")
-    parser.add_argument("--dry-run", action="store_true")
-    parser.add_argument("--url", type=str, default="http://localhost:8080")
+    parser.add_argument("--host", type=str, default="http://localhost:8080")
     parser.add_argument("--lobby", type=str, default="scenario-lobby")
     parser.add_argument("--no-launch-browser", action="store_true")
     parser.add_argument("--no-remap-keys", action="store_true")
+    parser.add_argument("--test", action="store_true")
 
     args = parser.parse_args()
 
     # collect SUBJECT_ID to keep track
     kvals = {
-        "subject_id": easygui.enterbox("Subject ID: ", default="FED_2023MMDDa_3Tn")
+        "subject_id": easygui.enterbox(
+            "Subject ID: ", default=f"FED_2023{time.strftime('%m%d')}x_3Tn"
+        )
+        if not args.test
+        else "TEST"
     }
+
+    if kvals["subject_id"] is None:
+        logger.info(f"SUBJECT_ID not provided. exiting.")
+        exit()
+
     logger.info(f'SUBJECT_ID: {kvals["subject_id"]}')
 
     # use selenium to open up a browser to the game server instance
@@ -93,9 +103,10 @@ def main(kmonad=None):
     # that would be too many moving parts requiring coordination. in the future we may even
     # explore the possibility of having a game server run on openmind and query it internally
     # over the MIT network)
-    url = f"{args.url}/play?lobby_name={args.lobby}&auto=join_game_queue"
+    suffix = "&auto=join_game_queue"
+    url = f"{args.host}/play?lobby_name={args.lobby}"
     if not args.no_launch_browser:
-        open_url_in_browser(url, fullscreen=not args.dry_run)
+        open_url_in_browser(url + suffix, fullscreen=False)
 
     # start the keymapping process for use with the buttonbox
     kmonad = kmonad or KmonadProcessTracker()
@@ -105,19 +116,27 @@ def main(kmonad=None):
 
     # while the browser window loads, ask the participant to test their now-remapped
     # buttons so they can control the arrow keys using the two buttonboxes.
-    easygui.ccbox("Test your buttonbox now!")
-    test_arrow_keys()
+    response = easygui.ccbox("Test your buttonbox now!")
+    if response:
+        if not args.test:
+            practice_arrow_keys()
 
     # by now the browser should have loaded and joined an empty game room. this is a
     # good time to establish a connection to the server.
-    client = RemoteClient(url=url, lobby_name="scenario-lobby")
+    logger.info(f"Trying to connect to {args.host} and lobby {args.lobby}")
+    client = RemoteClient(url=args.host, render=False, lobby_name=args.lobby)
     connected, reason = client.Connect()
     assert connected, f"Unable to connect: {reason}"
     logger.info(f"Connected? {connected}")
 
     logger.info(
-        "confirmation of having joined a game: "
-        + str(easygui.ccbox("Have you joined a game yet?")),
+        "Confirmation of having joined a game: "
+        + str(
+            easygui.ccbox(
+                "If you're in the lobby, click 'JOIN GAME' now! "
+                + "Have you joined a game yet?"
+            )
+        ),
     )
 
     # we have to attach to an existing scenario first to be able to generate a `GameEndpoint` object
@@ -134,21 +153,30 @@ def main(kmonad=None):
     logger.info(
         f"starting {ScenarioMonitor} intance to monitor happenings in the scenario (is this necessary?)"
     )
-    monitor = ScenarioMonitor(
-        game,
-        pause_per_turn=(1 / REFRESH_RATE_HZ),  # scenario_data=scenario_data
-    )
-    monitor.run()
-    monitor.join()
+    # monitor = ScenarioMonitor(
+    #     game,
+    #     pause_per_turn=(1 / REFRESH_RATE_HZ),  # scenario_data=scenario_data
+    # )
+    # monitor.run()
+    # monitor.join()
 
     load_scenario(game, scenario_file="scenarios/hehe.json", kvals=kvals)
+
+    logger.info("nothing left to do. gracefully terminating.")
 
 
 if __name__ == "__main__":
     kmonad = KmonadProcessTracker()
+
+    def terminate():
+        kmonad.reset()
+
     try:
         main(kmonad)
+        terminate()
     # we want to ideally intercept Ctrl+C on main so we can restore the keymapping
     # this fails if there is a more general kind of exception
-    except KeyboardInterrupt:
-        kmonad.reset()
+    except Exception as e:
+        logger.warn(f"caught an exception. attempting to shut down `kmonad` process.")
+        terminate()
+        raise e
