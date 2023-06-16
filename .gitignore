@@ -10,3 +10,5 @@ __MACOSX
 *.db
 *.log
 scenarios/
+cb2fmri/kmonad-0.4.1-linux
+server/www
