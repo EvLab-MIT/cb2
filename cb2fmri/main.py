@@ -15,38 +15,11 @@ from py_client.local_game_coordinator import LocalGameCoordinator
 
 from cb2fmri.fixation import show_fixation, practice_arrow_keys
 from cb2fmri.remapkeys import KmonadProcessTracker
+from cb2fmri.utils import open_url_in_browser
 
-REFRESH_RATE_HZ = 10
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__file__)
-
-
-def open_url_in_browser(url, executable_path="", ffservice=None, fullscreen=True):
-    from selenium import webdriver
-
-    geckopath = (
-        executable_path
-        or subprocess.check_output(["which", "geckodriver"]).decode().strip()
-    )
-    if ffservice or geckopath:
-        ffservice = ffservice or webdriver.chrome.service.Service(
-            executable_path=geckopath
-        )
-    else:
-        raise ModuleNotFoundError(
-            "`geckodriver` is not in your path. do you have it installed?"
-        )
-
-    browser = webdriver.Firefox(service=ffservice)
-
-    # launches URL in browser
-    logger.info(f"opening up a browser window using {geckopath} to URL {url}")
-    browser.get(url)
-    if fullscreen:
-        browser.fullscreen_window()
-
-    return ffservice
 
 
 def load_scenario(
@@ -153,10 +126,12 @@ def main(kmonad=None):
     logger.info(
         f"starting {ScenarioMonitor} intance to monitor happenings in the scenario (is this necessary?)"
     )
-    # monitor = ScenarioMonitor(
-    #     game,
-    #     pause_per_turn=(1 / REFRESH_RATE_HZ),  # scenario_data=scenario_data
-    # )
+
+    REFRESH_RATE_HZ = 10
+    monitor = ScenarioMonitor(
+        game,
+        pause_per_turn=(1 / REFRESH_RATE_HZ),  # scenario_data=scenario_data
+    )
     # monitor.run()
     # monitor.join()
 
@@ -168,15 +143,12 @@ def main(kmonad=None):
 if __name__ == "__main__":
     kmonad = KmonadProcessTracker()
 
-    def terminate():
-        kmonad.reset()
-
     try:
         main(kmonad)
-        terminate()
+        kmonad.reset()
     # we want to ideally intercept Ctrl+C on main so we can restore the keymapping
     # this fails if there is a more general kind of exception
     except Exception as e:
         logger.warn(f"caught an exception. attempting to shut down `kmonad` process.")
-        terminate()
+        kmonad.reset()
         raise e
