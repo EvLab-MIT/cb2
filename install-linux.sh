@@ -39,14 +39,14 @@ python3 -m pip install -r requirements.txt
 
 echo "Downloading WebGL client..."
 cd server/www/
-wget https://github.com/lil-lab/cb2/releases/download/dev-june-2023/WebGL.zip
+wget -O WebGL.zip https://github.com/lil-lab/cb2/releases/download/dev-june-2023/WebGL.zip
 echo "Decompressing client."
 unzip WebGL
 cd -
 
 echo "Downloading kmonad binary for keyboard remapping"
 cd cb2fmri
-wget https://github.com/kmonad/kmonad/releases/download/0.4.1/kmonad-0.4.1-linux
+wget -O ./kmonad-0.4.1-linux https://github.com/kmonad/kmonad/releases/download/0.4.1/kmonad-0.4.1-linux
 chmod +x ./kmonad-0.4.1-linux
 echo "done"
 cd -
