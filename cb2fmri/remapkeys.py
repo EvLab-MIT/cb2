@@ -37,5 +37,8 @@ class KmonadProcessTracker:
 
     def reset(self):
         logger.info("shutting down kmonad process")
-        self.proc.terminate()
-        subprocess.Popen(" ".join(["sudo", "pkill", "kmonad"]), shell=True)
+        if self.proc:
+            self.proc.terminate()
+            subprocess.Popen(" ".join(["sudo", "pkill", "kmonad"]), shell=True)
+        else:
+            logger.warn("no kmonad process to terminate. exiting silently.")
