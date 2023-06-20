@@ -83,14 +83,41 @@ def draw_text(text, screen):
     pygame.display.flip()
 
 
-def accept_key(keycode, keyname):
+def accept_key(
+    keycode: str,
+    keyname: str,
+    caption: str = "Practice buttonpress",
+    instruction: str = "Please press {keyname}",
+    success: str = "Success!",
+    failure: str = "Wrong key! Please press: {keyname}",
+) -> bool:
+    """Get a user to press a certain key before proceeding.
+        Shows a white screen with black text in a blocking
+        fashion. Shows feedback in case an incorrect keypress is
+        registered. Can be exited using ESC.
+
+    Args:
+        keycode (str): keycode of the key to accept
+        keyname (str): human-readable name of the key (e.g. Left arrow key)
+        caption (str, optional): window caption. Defaults to "Practice buttonpress".
+        instruction (str, optional): instruction to show on the screen while waiting.
+            Defaults to "Please press {keyname}". Is rendered using `.format(keycode=keycode, keyname=keyname)`
+            before displaying.
+        success (str, optional): Message upon successful keypress. Defaults to "Success!".
+        failure (str, optional): Message upong incorrect keypress. Defaults to "Wrong key! Please press: {keyname}".
+            Is rendered using `.format(keycode=keycode, keyname=keyname)`
+            before displaying.
+
+    Returns:
+        bool: was the correct key eventually pressed?
+    """
     pygame.init()
 
     screen = init_screen()
     W, H = screen.get_size()
-    pygame.display.set_caption("Practice buttonpress")
+    pygame.display.set_caption(caption)
 
-    draw_text(f"Please press {keyname}", screen)
+    draw_text(instruction.format(keycode=keycode, keyname=keyname), screen)
 
     correct_button_pressed = False
     while not correct_button_pressed:
@@ -101,7 +128,7 @@ def accept_key(keycode, keyname):
 
             if event.type == pygame.KEYDOWN and event.key == keycode:
                 correct_button_pressed = True
-                draw_text(f"Success!", screen)
+                draw_text(success.format(keycode=keycode, keyname=keyname), screen)
                 pygame.quit()
 
             elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
@@ -110,9 +137,24 @@ def accept_key(keycode, keyname):
                 return False
 
             elif event.type == pygame.KEYDOWN:
-                draw_text(f"Wrong key! Please press: {keyname}", screen)
+                draw_text(failure.format(keycode=keycode, keyname=keyname), screen)
 
     return True
+
+
+def wait_for_trigger():
+    """
+    wrapper around `accept_key` to wait for the scanner to
+    send a `+` key trigger signaling start of the functional run
+    """
+    accept_key(
+        keycode=pygame.K_PLUS,
+        keyname="+",
+        caption="waiting for trigger",
+        instruction="waiting for scanner...",
+        success="starting experiment!",
+        failure="waiting for scanner...",
+    )
 
 
 def practice_arrow_keys():
