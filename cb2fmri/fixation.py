@@ -9,10 +9,13 @@
 
 """
 
+import typing
 import pygame
 import logging
 
 logger = logging.getLogger(__file__)
+
+SECONDS = 1
 
 
 def init_screen() -> pygame.Surface:
@@ -26,7 +29,7 @@ def draw_fixation_cross(x, y, screen, length=20, width=5, color=pygame.Color("bl
     pygame.draw.line(screen, color, (x - length, y), (x + length, y), width)
 
 
-def show_fixation(t: int):
+def show_fixation(t: typing.Union["SECONDS", int]):
     # shows fixation cross for t **seconds** and then quits
 
     pygame.init()
@@ -148,8 +151,8 @@ def wait_for_trigger():
     send a `+` key trigger signaling start of the functional run
     """
     accept_key(
-        keycode=pygame.K_PLUS,
-        keyname="+",
+        keycode=pygame.K_EQUALS,
+        keyname="=",
         caption="waiting for trigger",
         instruction="waiting for scanner...",
         success="starting experiment!",

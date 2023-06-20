@@ -13,13 +13,15 @@ from py_client.remote_client import RemoteClient
 from py_client.game_endpoint import Action, GameEndpoint
 from py_client.local_game_coordinator import LocalGameCoordinator
 
-from cb2fmri.fixation import show_fixation, practice_arrow_keys
+from cb2fmri.fixation import show_fixation, practice_arrow_keys, wait_for_trigger
 from cb2fmri.remapkeys import KmonadProcessTracker
 from cb2fmri.utils import open_url_in_browser
 
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__file__)
+
+SECONDS = 1
 
 
 def load_scenario(
@@ -65,12 +67,14 @@ def main(kmonad=None):
             values=(f"FED_2023{time.strftime('%m%d')}x_3Tn", -1),
         )
         if not args.test
-        else "TEST"
+        else ("TEST", -1)
     )
 
     kvals = {"subject_id": subject_id, "run": run_no}
 
-    if kvals["subject_id"] is None or kvals["run"] is None:
+    if kvals["subject_id"] and kvals["run"]:
+        pass
+    else:
         logger.info(f"SUBJECT_ID or RUN# not provided. exiting.")
         exit()
 
@@ -94,18 +98,21 @@ def main(kmonad=None):
 
     # while the browser window loads, ask the participant to test their now-remapped
     # buttons so they can control the arrow keys using the two buttonboxes.
+    # if not args.test:
     response = easygui.ccbox("Test your buttonbox now!")
     if response:
-        if not args.test:
-            practice_arrow_keys()
+        practice_arrow_keys()
 
     # by now the browser should have loaded and joined an empty game room. this is a
     # good time to establish a connection to the server.
     logger.info(f"Trying to connect to {args.host} and lobby {args.lobby}")
-    client = RemoteClient(url=args.host, render=False, lobby_name=args.lobby)
-    connected, reason = client.Connect()
-    assert connected, f"Unable to connect: {reason}"
-    logger.info(f"Connected? {connected}")
+    try:
+        client = RemoteClient(url=args.host, render=False, lobby_name=args.lobby)
+        connected, reason = client.Connect()
+        logger.info(f"Connected? {connected}")
+    except Exception as e:
+        if not args.no_launch_browser:
+            raise
 
     logger.info(
         "Confirmation of having joined a game: "
@@ -122,16 +129,20 @@ def main(kmonad=None):
     # the default scenario on startup is identified by just an empty-string
     scenario_id = ""
     logger.info(f"trying to attach scenario with id: {scenario_id}")
-    game, reason = client.AttachToScenario(
-        scenario_id=scenario_id, timeout=timedelta(minutes=1)
-    )
+    try:
+        game, reason = client.AttachToScenario(
+            scenario_id=scenario_id, timeout=timedelta(minutes=1)
+        )
+        assert game is not None, f"couldn't AttachToScenario `{scenario_id}`"
+    except Exception as e:
+        if not args.no_launch_browser:
+            raise
 
-    assert game is not None, f"couldn't AttachToScenario `{scenario_id}`"
     logger.info(
         f"starting {ScenarioMonitor} intance to monitor happenings in the scenario (is this necessary?)"
     )
 
-    REFRESH_RATE_HZ = 10
+    REFRESH_RATE_HZ = 10 / SECONDS
     monitor = ScenarioMonitor(
         game,
         pause_per_turn=(1 / REFRESH_RATE_HZ),  # scenario_data=scenario_data
@@ -139,6 +150,8 @@ def main(kmonad=None):
     # monitor.run()
     # monitor.join()
 
+    wait_for_trigger()
+    show_fixation(2 * SECONDS)
     load_scenario(game, scenario_file="scenarios/hehe.json", kvals=kvals)
 
     logger.info("nothing left to do. gracefully terminating.")
