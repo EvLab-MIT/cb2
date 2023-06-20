@@ -8,7 +8,7 @@ pertaining to running the experiment in an fMRI scanner. The parent directory is
 
 # Usage
 
-There are two components to running this.
+There are two components to running this experiment.
 
 ## 1. CB2 game server
 
