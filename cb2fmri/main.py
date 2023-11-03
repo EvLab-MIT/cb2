@@ -25,7 +25,9 @@ SECONDS = 1
 
 
 def load_scenario(
-    game: GameEndpoint, scenario_file: str = "scenarios/hehe.json", kvals: dict = {}
+    game: GameEndpoint, 
+    scenario_file: str = "scenarios/hehe.json", 
+    kvals: dict = {},
 ):
     # test some scenario file to try to join
     with open(scenario_file, "r") as f:
@@ -101,7 +103,7 @@ def main(kmonad=None):
     # if not args.test:
     response = easygui.ccbox("Test your buttonbox now!")
     if response:
-        practice_arrow_keys()
+        success = practice_arrow_keys()
 
     # by now the browser should have loaded and joined an empty game room. this is a
     # good time to establish a connection to the server.
@@ -139,7 +141,7 @@ def main(kmonad=None):
             raise
 
     logger.info(
-        f"starting {ScenarioMonitor} intance to monitor happenings in the scenario (is this necessary?)"
+        f"starting {ScenarioMonitor} instance to monitor happenings in the scenario (is this necessary?)"
     )
 
     REFRESH_RATE_HZ = 10 / SECONDS
