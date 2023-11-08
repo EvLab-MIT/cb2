@@ -61,11 +61,11 @@ python-versions = ">=3.6"
 
 [[package]]
 name = "cffi"
-version = "1.15.1"
+version = "1.16.0"
 description = "Foreign Function Interface for Python calling C code."
 category = "main"
 optional = false
-python-versions = "*"
+python-versions = ">=3.8"
 
 [package.dependencies]
 pycparser = "*"
@@ -409,7 +409,7 @@ python-versions = ">=3.7"
 
 [[package]]
 name = "urllib3"
-version = "2.0.3"
+version = "2.0.7"
 description = "HTTP library with thread-safe connection pooling, file post, and more."
 category = "main"
 optional = false
@@ -446,7 +446,7 @@ h11 = ">=0.9.0,<1"
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.9"
-content-hash = "d2c2a2a355c54f786fff18c01b0aa883255cc2b45e7895c2e1fad9893fdfed4f"
+content-hash = "8a779bca0c2831445541e6be23b891bbcf1e4494285343ffbba47a58c0e7e426"
 
 [metadata.files]
 appnope = [
