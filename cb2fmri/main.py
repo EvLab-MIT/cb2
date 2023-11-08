@@ -25,8 +25,8 @@ SECONDS = 1
 
 
 def load_scenario(
-    game: GameEndpoint, 
-    scenario_file: str = "scenarios/hehe.json", 
+    game: GameEndpoint,
+    scenario_file: str = "scenarios/hehe.json",
     kvals: dict = {},
 ):
     # test some scenario file to try to join
@@ -156,7 +156,13 @@ def main(kmonad=None):
     show_fixation(2 * SECONDS)
     load_scenario(game, scenario_file="scenarios/hehe.json", kvals=kvals)
 
-    logger.info("nothing left to do. gracefully terminating.")
+    logger.info("nothing left to do. ready to gracefully terminate.")
+
+    def check_completion_condition():
+        return False
+
+    while not check_completion_condition():
+        time.sleep(10)
 
 
 if __name__ == "__main__":
