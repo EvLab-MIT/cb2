@@ -161,10 +161,11 @@ def wait_for_trigger():
 
 
 def practice_arrow_keys():
-    accept_key(pygame.K_UP, "[Forwards]") and accept_key(
-        pygame.K_DOWN, "[Backwards]"
-    ) and accept_key(pygame.K_LEFT, "[<< Turn Left]") and accept_key(
-        pygame.K_RIGHT, "[Turn Right >>]"
+    return (
+        accept_key(pygame.K_UP, "[Forwards]")
+        and accept_key(pygame.K_DOWN, "[Backwards]")
+        and accept_key(pygame.K_LEFT, "[<< Turn Left]")
+        and accept_key(pygame.K_RIGHT, "[Turn Right >>]")
     )
 
 
