@@ -9,13 +9,15 @@
 
 """
 
-import typing
+import time
 import pygame
 import logging
 
+from py_client.game_endpoint import Action
+
 logger = logging.getLogger(__file__)
 
-SECONDS = 1
+FONT_SIZE = 75
 
 
 def init_screen() -> pygame.Surface:
@@ -29,7 +31,7 @@ def draw_fixation_cross(x, y, screen, length=20, width=5, color=pygame.Color("bl
     pygame.draw.line(screen, color, (x - length, y), (x + length, y), width)
 
 
-def show_fixation(t: typing.Union["SECONDS", int]):
+def show_fixation(t):
     # shows fixation cross for t **seconds** and then quits
 
     pygame.init()
@@ -37,10 +39,8 @@ def show_fixation(t: typing.Union["SECONDS", int]):
     screen = init_screen()
     W, H = screen.get_size()
 
-    # W, H = 500, 500  # Size of the graphic window
     center_x = W // 2
     center_y = H // 2
-    # screen = pygame.display.set_mode((W, H), pygame.DOUBLEBUF)
 
     pygame.display.set_caption("Fixation cross")
     screen.fill(pygame.Color("white"))
@@ -48,36 +48,47 @@ def show_fixation(t: typing.Union["SECONDS", int]):
     draw_fixation_cross(center_x, center_y, screen)
 
     pygame.display.flip()
-    time_start = pygame.time.get_ticks()
-
-    # Wait until the window is closed
-    quit_button_pressed = False
-    while not quit_button_pressed:
-        pygame.time.wait(10)
-
-        for event in pygame.event.get():
-            logger.debug(event)
-
-            if event.type == pygame.QUIT:
-                quit_button_pressed = True
-                pygame.quit()
-                return
-
-            elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-                quit_button_pressed = True
-                pygame.quit()
-                return
-
-        if pygame.time.get_ticks() - time_start >= t * 1000:
-            quit_button_pressed = True
-            pygame.quit()
-            return
+    pygame.time.wait(t * 1000)
+    pygame.quit()
 
 
-def draw_text(text, screen):
-    screen.fill(pygame.Color("white"))
-    font = pygame.font.Font(pygame.font.get_default_font(), 45)
-    text = font.render(text, True, pygame.Color("black"))
+def show_result(success: bool, t):
+    # shows result (check for success, X for failure) for t **seconds** and then quits
+
+    pygame.init()
+
+    screen = init_screen()
+
+    if success:
+        draw_text('Success!', screen, textcolor='blue')
+    else:
+        draw_text('Timed out.', screen, textcolor='red')
+
+    pygame.display.set_caption("Result")
+    pygame.time.wait(t * 1000)
+    pygame.quit()
+
+
+def show_run_complete():
+    # shows run complete screen until keypress
+
+    instruction = 'Run complete. Press any button to exit.'
+
+    accept_key(
+        keycode=None,
+        keyname='',
+        caption=instruction,
+        instruction=instruction,
+        success="",
+        failure="",
+    )
+    pygame.quit()
+
+
+def draw_text(text, screen, textcolor="black", bgcolor="white", fontsize=FONT_SIZE):
+    screen.fill(pygame.Color(bgcolor))
+    font = pygame.font.Font(pygame.font.get_default_font(), fontsize)
+    text = font.render(text, True, pygame.Color(textcolor))
 
     W, H = screen.get_size()
 
@@ -87,51 +98,41 @@ def draw_text(text, screen):
 
 
 def accept_key(
-    keycode: str,
-    keyname: str,
-    caption: str = "Practice buttonpress",
-    instruction: str = "Please press {keyname}",
-    success: str = "Success!",
-    failure: str = "Wrong key! Please press: {keyname}",
-) -> bool:
-    """Get a user to press a certain key before proceeding.
-        Shows a white screen with black text in a blocking
-        fashion. Shows feedback in case an incorrect keypress is
-        registered. Can be exited using ESC.
-
-    Args:
-        keycode (str): keycode of the key to accept
-        keyname (str): human-readable name of the key (e.g. Left arrow key)
-        caption (str, optional): window caption. Defaults to "Practice buttonpress".
-        instruction (str, optional): instruction to show on the screen while waiting.
-            Defaults to "Please press {keyname}". Is rendered using `.format(keycode=keycode, keyname=keyname)`
-            before displaying.
-        success (str, optional): Message upon successful keypress. Defaults to "Success!".
-        failure (str, optional): Message upong incorrect keypress. Defaults to "Wrong key! Please press: {keyname}".
-            Is rendered using `.format(keycode=keycode, keyname=keyname)`
-            before displaying.
-
-    Returns:
-        bool: was the correct key eventually pressed?
-    """
+    keycode,
+    keyname,
+    caption="Practice buttonpress",
+    instruction="Please press {keyname}",
+    success="Success!",
+    failure="Wrong key! Please press: {keyname}",
+    game=None
+):
     pygame.init()
 
     screen = init_screen()
-    W, H = screen.get_size()
     pygame.display.set_caption(caption)
 
     draw_text(instruction.format(keycode=keycode, keyname=keyname), screen)
 
     correct_button_pressed = False
+    last_step = time.time()
+    if game is not None:
+        game.step(Action.NoopAction())
+        last_step = time.time()
+
     while not correct_button_pressed:
         pygame.time.wait(10)  # milliseconds
+        if game is not None:
+            delay = time.time() - last_step
+            if delay > 5:
+                game.step(Action.NoopAction())
+                last_step = time.time()
 
         for event in pygame.event.get():
-            logger
-
-            if event.type == pygame.KEYDOWN and event.key == keycode:
+            if event.type == pygame.KEYDOWN and (keycode is None or event.key == keycode):
                 correct_button_pressed = True
-                draw_text(success.format(keycode=keycode, keyname=keyname), screen)
+                if success:
+                    draw_text(success.format(keycode=keycode, keyname=keyname), screen)
+                    pygame.time.wait(1000)
                 pygame.quit()
 
             elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
@@ -140,29 +141,40 @@ def accept_key(
                 return False
 
             elif event.type == pygame.KEYDOWN:
-                draw_text(failure.format(keycode=keycode, keyname=keyname), screen)
+                if failure:
+                    draw_text(failure.format(keycode=keycode, keyname=keyname), screen)
 
     return True
 
 
-def wait_for_trigger():
+def wait_for_trigger(game=None, in_scanner=True):
     """
     wrapper around `accept_key` to wait for the scanner to
     send a `+` key trigger signaling start of the functional run
     """
+
+    if in_scanner:
+        instruction = "Waiting for scanner..."
+        key = pygame.K_EQUALS
+    else:
+        instruction = 'Press any key to continue...'
+        key = None
+
     accept_key(
-        keycode=pygame.K_EQUALS,
+        keycode=key,
         keyname="=",
-        caption="waiting for trigger",
-        instruction="waiting for scanner...",
-        success="starting experiment!",
-        failure="waiting for scanner...",
+        caption=instruction,
+        instruction=instruction,
+        success="Starting experiment",
+        failure=instruction,
+        game=game
     )
 
 
 def practice_arrow_keys():
     return (
-        accept_key(pygame.K_UP, "[Forwards]")
+        accept_key(pygame, None, 'Press any button to test controls.')
+        and accept_key(pygame.K_UP, "[Forwards]")
         and accept_key(pygame.K_DOWN, "[Backwards]")
         and accept_key(pygame.K_LEFT, "[<< Turn Left]")
         and accept_key(pygame.K_RIGHT, "[Turn Right >>]")

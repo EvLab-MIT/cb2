@@ -2017,5 +2017,8 @@
     ],
     "player_id": 21,
     "player_role": 2
-  }
+  },
+  "target_card_ids": [
+      2
+  ]
 }
